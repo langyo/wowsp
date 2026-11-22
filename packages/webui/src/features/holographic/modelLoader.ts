@@ -18,12 +18,16 @@
  *
  * MOBILE (phone app build): the pack ships inside the APK's assets, and the
  * webui build keeps the GLBs (WOWSP_MOBILE_BUNDLE=1 skips prune-baked-glb).
- * Startup wires the pack cache ONLY when a downloaded update is serving
- * (AppShell → res_cache_root); otherwise initModelPack stays unwired and
- * every URL below resolves SAME-ORIGIN (`/models/...`) straight out of the
- * read-only APK assets — the exact fallback the unwired state already
- * produces. `fetchModelResource`'s GLB-magic validation keeps the WebView's
- * SPA-fallback answers from poisoning loads there too.
+ * Startup wires the pack cache through `wireModelPackFromShell()`, which
+ * every surface calls (AppShell at boot, the replay view at mount). It is
+ * UNCONDITIONAL inside the Tauri shell — `tauri dev` included — so the
+ * loader always holds the shell's `res_cache_root` before a scene asks for
+ * a URL (production's ensure/download pass only FILLS a missing pack; it is
+ * not what wires the loader). A plain browser tab stays unwired and every
+ * URL below resolves SAME-ORIGIN (`/models/...`) straight out of the
+ * read-only APK assets / Vite tree — the exact fallback the unwired state
+ * already produces. `fetchModelResource`'s GLB-magic validation keeps the
+ * WebView's SPA-fallback answers from poisoning loads there too.
  *
  * ## Skin → base model dedup
  * `src/data/ship_models.json` maps each shipId to a `baseName`.
@@ -38,6 +42,7 @@ import nationNamesDbRaw from "../../data/nation_names.json";
 import { ref } from "vue";
 import { runtimeShipEntry } from "@/utils/runtimeShipDb";
 import { isNative } from "@/utils/platform";
+import { resPackApi } from "@/api/modules/respack";
 import { wireInsightsPack } from "./insightsLoader";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -79,6 +84,37 @@ export async function initModelPack(fetch: () => Promise<string>): Promise<void>
 /** Whether the model-pack cache is wired up (initModelPack succeeded). */
 export function isModelPackReady(): boolean {
   return _modelCacheRoot != null;
+}
+
+/** Wire the loader to the shell's model-pack cache. This is the ONE startup
+ *  entry point every surface uses — AppShell at boot, the replay view at
+ *  mount — and it is unconditional inside the Tauri shell (`tauri dev`
+ *  included), so a surface can never ask for a model, or run the resource
+ *  diagnostic, against a loader that still reports `cacheRoot = null`
+ *  (unwired). Production's ensure/download pass is only the path that FILLS
+ *  a missing pack; it is not what wires the loader.
+ *
+ *  Idempotent (initModelPack's guard, plus one shared in-flight promise so
+ *  the boot-time and replay-view calls cannot double-probe the pack) and a
+ *  no-op in a plain browser tab, where `/models/...` is the only source. */
+let _wiring: Promise<void> | null = null;
+
+export function wireModelPackFromShell(): Promise<void> {
+  if (_modelCacheRoot || !isNative()) return Promise.resolve();
+  if (_wiring) return _wiring;
+  _wiring = (async () => {
+    try {
+      const root = await resPackApi.resCacheRoot();
+      if (root) await initModelPack(async () => root);
+    } catch {
+      // Older shell / IPC hiccup — the same-origin /models/... paths serve.
+    } finally {
+      // Release the slot: a later surface retries when the first pass
+      // found no pack yet (the ensure/download pass may have filled it).
+      _wiring = null;
+    }
+  })();
+  return _wiring;
 }
 
 // ── Resource-health probes (see features/holographic/resourceHealth.ts) ──

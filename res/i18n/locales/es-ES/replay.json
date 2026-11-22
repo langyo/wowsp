@@ -640,6 +640,7 @@
     "pin": "Fijar (permitir clics)",
     "resources": "Recursos",
     "recheck": "Revisar de nuevo",
+    "fixHint": "Corrección",
     "environment": "Entorno",
     "env": {
       "tauri": "Shell de Tauri",

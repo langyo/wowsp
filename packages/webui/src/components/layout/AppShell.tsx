@@ -28,7 +28,10 @@ import { useCloseBehaviorStore } from "@/stores/closeBehavior";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { usePluginPromptStore } from "@/stores/pluginPrompt";
 import { useDuplicateInstallStore } from "@/stores/duplicateInstall";
-import { initModelPack } from "@/features/holographic/modelLoader";
+import {
+  initModelPack,
+  wireModelPackFromShell,
+} from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { peekLastRunVersion } from "@/utils/lastRunVersion";
 import { setRuntimeKit } from "@/utils/shipKit";
@@ -233,6 +236,13 @@ export default defineComponent({
     );
 
     onMounted(async () => {
+      // Wire the model-pack cache from the shell before any surface needs
+      // models. Unconditional inside the Tauri shell (dev included): the
+      // production ensure/download pass below only FILLS a missing pack, it
+      // is NOT what wires the loader — keeping the wiring inside the !DEV
+      // gate left the replay view's diagnostic reading `cacheRoot = null
+      // (unwired)` under `tauri dev`. Idempotent, no-op in a browser tab.
+      void wireModelPackFromShell();
       // Portable-mode probe runs on EVERY surface — desktop (normal and
       // portable), the phone build and browser dev: the ship-detail aircraft
       // hint and the titlebar both read the flag, and the phone / browser

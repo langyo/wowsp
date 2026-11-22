@@ -640,6 +640,7 @@
     "pin": "固定（點擊穿透）",
     "resources": "資源",
     "recheck": "重新檢查",
+    "fixHint": "修復",
     "environment": "環境",
     "env": {
       "tauri": "Tauri 外殼",

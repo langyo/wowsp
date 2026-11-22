@@ -640,6 +640,7 @@
     "pin": "固定（クリック透過）",
     "resources": "リソース",
     "recheck": "再確認",
+    "fixHint": "修正",
     "environment": "環境",
     "env": {
       "tauri": "Tauri シェル",

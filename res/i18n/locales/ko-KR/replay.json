@@ -640,6 +640,7 @@
     "pin": "고정(클릭 통과)",
     "resources": "리소스",
     "recheck": "다시 검사",
+    "fixHint": "수정",
     "environment": "환경",
     "env": {
       "tauri": "Tauri 셸",

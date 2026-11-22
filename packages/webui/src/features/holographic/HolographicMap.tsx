@@ -16,6 +16,7 @@ import {
   shipSilhouetteUrl,
   shipOfflineEntry,
   loadSilhouettes,
+  wireModelPackFromShell,
   type MapBounds,
 } from "./modelLoader";
 import { clearShipMarkerCache } from "./shipMarker";
@@ -604,6 +605,12 @@ export default defineComponent({
     branch: { type: String, default: "" },
   },
   setup(props, { expose }) {
+    // Wire the model pack HERE too, not only from AppShell: a child view
+    // mounts before its parent's onMounted hook runs, so a replay opened by
+    // deep link would otherwise race the shell's startup pass. Idempotent
+    // (initModelPack's guard) and a no-op outside the Tauri shell — the
+    // loader/diagnostic must see the cache root before the first GLB fetch.
+    void wireModelPackFromShell();
     const container = ref<HTMLElement | null>(null);
     // The 2D minimap repaints at ~16 Hz — the game's own minimap cadence —
     // instead of once per render frame. The enlarged overlay repaints all

@@ -34,10 +34,13 @@
  * hand-styled per-section HkButtons are gone) and its labels are
  * translated through the app i18n (`replay.perf.*`).
  * The 资源 section is not a text line: it renders the resource-health
- * check chain (features/holographic/resourceHealth.ts) as pass/fail rows
- * with the fix hint, the per-ship missing list, and a 重新检查 button. The
- * chain runs automatically once when a replay view opens with a session
- * ship-model failure, so a silent empty scene explains itself here.
+ * check chain (features/holographic/resourceHealth.ts) as STRUCTURED rows —
+ * a coloured status chip (pass / fallback / fail / info, no emoji glyphs),
+ * the check label, the detail in a mono code block, extras as their own
+ * mono blocks and the fix hint as a labelled hint row — plus the per-ship
+ * missing/fallback lists and a 重新检查 button. The chain runs automatically
+ * once when a replay view opens with a session ship-model failure, so a
+ * silent empty scene explains itself here.
  * The card is a FIXED width (PERF_HUD_WIDTH, applied to the slot root) so
  * toggling sections can never reflow/resize the window; with every
  * section off the button row stays and the metric area keeps a reserved
@@ -317,20 +320,33 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
   // The report itself is module state in resourceHealth.ts (the auto-run
   // and the replay view own it); this panel only renders the last report
   // and offers the manual re-run. Details are paths/URLs and stay raw;
-  // labels, hints and the missing-model prefix go through the app i18n.
+  // labels, chips, hints and the list titles go through the app i18n.
   const health = useResourceHealth();
-  const statusGlyph: Record<ResourceCheckStatus, string> = {
-    pass: "✓",
-    fail: "✗",
-    fallback: "!",
-    info: "·",
-  };
+  /** Status tone per check — the badge colour is the ONLY state marker; no
+   *  ✓/✗/!/· glyphs are scattered through the text anymore. */
   const statusTone: Record<ResourceCheckStatus, string> = {
     pass: "rgb(var(--color-success, 14 184 64))",
     fail: "rgb(var(--color-error, 220 38 38))",
     fallback: "rgb(var(--color-warning, 238 214 119))",
-    info: "inherit",
+    info: "rgb(var(--color-text-secondary, 178 178 188))",
   };
+  /** The shared badge shell: a bordered pill in the tone's colour, used for
+   *  the check status, the environment value and the list labels. */
+  const resourceChipStyle = (tone: string): CSSProperties => ({
+    display: "inline-flex",
+    alignItems: "center",
+    flex: "none",
+    padding: "0 var(--space-2)",
+    borderRadius: "999px",
+    border: "1px solid currentColor",
+    background: "rgb(255 255 255 / 6%)",
+    color: tone,
+    fontSize: "0.7em",
+    fontWeight: 600,
+    lineHeight: "1.7",
+    letterSpacing: "0.02em",
+    whiteSpace: "nowrap",
+  });
   const resourceSectionStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
@@ -341,27 +357,69 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
   const resourceRowStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
-    gap: "2px",
+    gap: "var(--space-2)",
     paddingBottom: "var(--space-2)",
     borderBottom: "1px solid rgb(255 255 255 / 8%)",
     minWidth: 0,
   };
   const resourceHeadStyle: CSSProperties = {
     display: "flex",
-    alignItems: "baseline",
+    alignItems: "center",
     gap: "var(--space-2)",
+    flexWrap: "wrap",
     minWidth: 0,
   };
+  const resourceLabelStyle: CSSProperties = {
+    fontWeight: 600,
+    minWidth: 0,
+    overflowWrap: "anywhere",
+  };
+  /** Code-style block: paths, URLs, counts and probe outcomes keep their
+   *  raw mono form inside their own bounded box instead of free text. */
   const resourceDetailStyle: CSSProperties = {
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    fontFamily:
+      "var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace)",
+    fontSize: "0.92em",
+    lineHeight: 1.5,
+    padding: "var(--space-2) var(--space-3)",
+    borderRadius: "var(--radius-sm, 4px)",
+    border: "1px solid rgb(255 255 255 / 8%)",
+    background: "rgb(255 255 255 / 5%)",
+    opacity: 0.9,
+  };
+  /** Neutral prose (the not-checked-yet note). */
+  const resourceNoteStyle: CSSProperties = {
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
     opacity: 0.8,
   };
-  const resourceHintStyle: CSSProperties = {
+  /** Fix hints are their own labelled row under the detail block. */
+  const resourceHintRowStyle: CSSProperties = {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "var(--space-2)",
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
     color: "rgb(var(--color-warning, 238 214 119))",
   };
+
+  /** One badge — the structured replacement for the old glyph span. */
+  const resourceChip = (
+    label: string,
+    tone: string,
+    dataAttr: Record<string, string> = {},
+  ) =>
+    h(
+      "span",
+      {
+        ...dataAttr,
+        class: "holo-perf-hud-resource-chip",
+        style: resourceChipStyle(tone),
+      },
+      label,
+    );
 
   const renderResourceSection = () => {
     const report = health.report.value;
@@ -375,16 +433,17 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
           style: resourceHeadStyle,
         },
         [
-          h("span", null, i18nT("replay.perf.environment")),
           h(
             "span",
+            { style: resourceLabelStyle },
+            i18nT("replay.perf.environment"),
+          ),
+          resourceChip(
+            report ? i18nT(`replay.perf.env.${report.environment}`) : "—",
+            statusTone.info,
             {
               "data-holo-resource-env-value": report?.environment ?? "unknown",
-              style: { opacity: 0.8 },
             },
-            report
-              ? i18nT(`replay.perf.env.${report.environment}`)
-              : "—",
           ),
         ],
       ),
@@ -396,7 +455,7 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
           {
             class: "holo-perf-hud-resource-idle",
             "data-holo-resource-idle": "",
-            style: resourceDetailStyle,
+            style: resourceNoteStyle,
           },
           i18nT("replay.perf.idle"),
         ),
@@ -409,20 +468,28 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
             h(
               "span",
               {
-                class: "holo-perf-hud-resource-mark",
-                "aria-hidden": "true",
-                style: {
-                  color: statusTone[check.status],
-                  fontWeight: 700,
-                },
+                class: "holo-perf-hud-resource-status",
+                "data-holo-resource-status": check.status,
+                style: resourceChipStyle(statusTone[check.status]),
               },
-              statusGlyph[check.status],
+              i18nT(`replay.perf.status.${check.status}`),
             ),
-            h("span", { class: "holo-perf-hud-resource-label" }, label),
+            h(
+              "span",
+              {
+                class: "holo-perf-hud-resource-label",
+                style: resourceLabelStyle,
+              },
+              label,
+            ),
           ]),
           h(
             "div",
-            { class: "holo-perf-hud-resource-detail", style: resourceDetailStyle },
+            {
+              class: "holo-perf-hud-resource-detail",
+              "data-holo-resource-detail": check.id,
+              style: resourceDetailStyle,
+            },
             check.detail,
           ),
         ];
@@ -441,9 +508,21 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
               "div",
               {
                 class: "holo-perf-hud-resource-hint",
-                style: resourceHintStyle,
+                "data-holo-resource-hint": check.id,
+                style: resourceHintRowStyle,
               },
-              i18nT(`replay.perf.checkHint.${check.id}`),
+              [
+                resourceChip(
+                  i18nT("replay.perf.fixHint"),
+                  statusTone.fallback,
+                  { "data-holo-resource-hint-chip": "" },
+                ),
+                h(
+                  "span",
+                  { class: "holo-perf-hud-resource-hint-text" },
+                  i18nT(`replay.perf.checkHint.${check.id}`),
+                ),
+              ],
             ),
           );
         }
@@ -470,12 +549,26 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
             {
               class: "holo-perf-hud-resource-missing",
               "data-holo-resource-missing": "",
-              style: {
-                ...resourceHintStyle,
-                color: "rgb(var(--color-error, 220 38 38))",
-              },
+              style: resourceRowStyle,
             },
-            `${i18nT("replay.perf.missingModels")}: ${report.missingShips.join(", ")}`,
+            [
+              h("div", { style: resourceHeadStyle }, [
+                resourceChip(
+                  i18nT("replay.perf.missingModels"),
+                  statusTone.fail,
+                  { "data-holo-resource-missing-chip": "" },
+                ),
+              ]),
+              h(
+                "div",
+                {
+                  class: "holo-perf-hud-resource-missing-list",
+                  "data-holo-resource-missing-list": "",
+                  style: resourceDetailStyle,
+                },
+                report.missingShips.join(", "),
+              ),
+            ],
           ),
         );
       }
@@ -486,9 +579,26 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
             {
               class: "holo-perf-hud-resource-fallback",
               "data-holo-resource-fallback": "",
-              style: resourceHintStyle,
+              style: resourceRowStyle,
             },
-            `${i18nT("replay.perf.fallbackModels")}: ${report.fallbackShips.join(", ")}`,
+            [
+              h("div", { style: resourceHeadStyle }, [
+                resourceChip(
+                  i18nT("replay.perf.fallbackModels"),
+                  statusTone.fallback,
+                  { "data-holo-resource-fallback-chip": "" },
+                ),
+              ]),
+              h(
+                "div",
+                {
+                  class: "holo-perf-hud-resource-fallback-list",
+                  "data-holo-resource-fallback-list": "",
+                  style: resourceDetailStyle,
+                },
+                report.fallbackShips.join(", "),
+              ),
+            ],
           ),
         );
       }
