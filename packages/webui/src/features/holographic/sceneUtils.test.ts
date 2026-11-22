@@ -10,9 +10,13 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 
 import {
+  GOD_SYMBOL_MAX_SCALE,
+  GOD_SYMBOL_MIN_SCALE,
+  GOD_SYMBOL_TARGET_PX,
   MAX_LAYER_INDEX,
   adoptExportCameraLayers,
   exportCameraLayerMask,
+  godViewSymbolScale,
 } from "./sceneUtils";
 
 /** The 3D take's label cards (see exportShipLabels.EXPORT_LABEL_LAYER). */
@@ -120,5 +124,139 @@ describe("adoptExportCameraLayers", () => {
     expect(take.layers.test(hull.layers)).toBe(true);
     // The take's own export-only cards still render.
     expect(take.layers.test(objectOn(LABEL_LAYER).layers)).toBe(true);
+  });
+});
+
+/* ── The 3D export's god-view hull symbols ──────────────────────────────
+ * The clip frames the whole map from tens of km away, where a true-scale
+ * hull is a ~2 px sliver. The export therefore draws hulls as tactical-map
+ * symbols whose longest world dimension holds a constant screen length, using
+ * the label cards' own distance math. These tests pin that math: the
+ * screen-length invariant, each linear term, both clamp bounds, and the
+ * degenerate-input floor. */
+
+/** The clip's logical map square edge (playbackExport.EXPORT_LOGICAL). */
+const BUFFER = 760;
+/** The export camera's vertical FOV in degrees. */
+const FOV = 50;
+
+/** World units one logical map px spans at `distance` — the card math. */
+function worldPerPx(distance: number, fov = FOV, buffer = BUFFER): number {
+  return (2 * distance * Math.tan((fov * Math.PI) / 360)) / buffer;
+}
+
+/** On-screen length (logical px) `scale` gives a hull of `length` units. */
+function screenPx(scale: number, length: number, distance: number): number {
+  return (scale * length) / worldPerPx(distance);
+}
+
+describe("godViewSymbolScale", () => {
+  it("exports the clip's symbol constants", () => {
+    // The hull symbol must stay under the label card's 92 px width so the
+    // card keeps the live view's visual hierarchy (card strictly dominant).
+    expect(GOD_SYMBOL_TARGET_PX).toBe(56);
+    expect(GOD_SYMBOL_MIN_SCALE).toBe(1);
+    expect(GOD_SYMBOL_MAX_SCALE).toBe(40);
+  });
+
+  it("makes a hull span the target length at full-map range", () => {
+    // ~7.2k scene units is the fitted god camera's distance for a ~26 km map
+    // (the ~2 px sliver report this scaling exists for).
+    const distance = 7_158;
+    const scale = godViewSymbolScale(distance, FOV, 56, BUFFER, 50);
+
+    expect(scale).toBeGreaterThan(1);
+    expect(scale).toBeLessThan(GOD_SYMBOL_MAX_SCALE);
+    expect(screenPx(scale, 50, distance)).toBeCloseTo(56, 6);
+  });
+
+  it("gives every hull class the same on-screen length", () => {
+    // A battleship (50 u) and a destroyer (27 u) are different world lengths:
+    // the symbol scale absorbs the difference instead of the screen size.
+    const distance = 7_158;
+    const bb = godViewSymbolScale(distance, FOV, 56, BUFFER, 50);
+    const dd = godViewSymbolScale(distance, FOV, 56, BUFFER, 27);
+
+    expect(screenPx(bb, 50, distance)).toBeCloseTo(56, 6);
+    expect(screenPx(dd, 27, distance)).toBeCloseTo(56, 6);
+    expect(dd / bb).toBeCloseTo(50 / 27, 6);
+  });
+
+  it("is linear in distance", () => {
+    const base = godViewSymbolScale(2_000, FOV, 56, BUFFER, 20);
+    const twice = godViewSymbolScale(4_000, FOV, 56, BUFFER, 20);
+
+    expect(twice).toBeCloseTo(base * 2, 6);
+  });
+
+  it("is linear in the target length and inversely linear in the buffer", () => {
+    const base = godViewSymbolScale(2_000, FOV, 56, BUFFER, 20);
+
+    expect(
+      godViewSymbolScale(2_000, FOV, 112, BUFFER, 20),
+    ).toBeCloseTo(base * 2, 6);
+    expect(
+      godViewSymbolScale(2_000, FOV, 56, BUFFER * 2, 20),
+    ).toBeCloseTo(base / 2, 6);
+  });
+
+  it("widens with the field of view", () => {
+    // A wider lens sees more world per pixel, so the constant-px symbol is
+    // physically larger.
+    const narrow = godViewSymbolScale(2_000, 30, 56, BUFFER, 20);
+    const wide = godViewSymbolScale(2_000, 60, 56, BUFFER, 20);
+
+    expect(wide).toBeGreaterThan(narrow);
+    expect(wide / narrow).toBeCloseTo(
+      Math.tan((60 * Math.PI) / 360) / Math.tan((30 * Math.PI) / 360),
+      6,
+    );
+  });
+
+  it("is the identity at close range (never shrinks below true scale)", () => {
+    // 100 u from the camera, a 50 u hull is already far more than 56 px.
+    expect(godViewSymbolScale(100, FOV, 56, BUFFER, 50)).toBe(1);
+    // ...and exactly 1 at the distance where the true hull spans 56 px.
+    const identityDistance =
+      (50 * BUFFER) / (2 * Math.tan((FOV * Math.PI) / 360) * 56);
+    expect(
+      godViewSymbolScale(identityDistance, FOV, 56, BUFFER, 50),
+    ).toBeCloseTo(1, 10);
+    expect(
+      godViewSymbolScale(identityDistance * 1.01, FOV, 56, BUFFER, 50),
+    ).toBeGreaterThan(1);
+  });
+
+  it("caps runaway scaling at the hard cap", () => {
+    expect(godViewSymbolScale(1e9, FOV, 56, BUFFER, 50)).toBe(GOD_SYMBOL_MAX_SCALE);
+    // A bogusly tiny measured hull is capped too, never a screen-filling blob.
+    expect(godViewSymbolScale(7_158, FOV, 56, BUFFER, 0.01)).toBe(
+      GOD_SYMBOL_MAX_SCALE,
+    );
+  });
+
+  it("honours caller-supplied clamps", () => {
+    expect(godViewSymbolScale(100, FOV, 56, BUFFER, 50, 2, 40)).toBe(2);
+    expect(godViewSymbolScale(1e9, FOV, 56, BUFFER, 50, 1, 5)).toBe(5);
+  });
+
+  it("falls back to the true scale for degenerate inputs", () => {
+    // Unmeasurable hull/camera values must never produce a NaN transform.
+    // [distance, fovDeg, targetPx, bufferWidth, modelWorldLength]
+    const degenerate: [number, number, number, number, number][] = [
+      [Number.NaN, FOV, 56, BUFFER, 50],
+      [0, FOV, 56, BUFFER, 50],
+      [-5, FOV, 56, BUFFER, 50],
+      [2_000, Number.NaN, 56, BUFFER, 50],
+      [2_000, 0, 56, BUFFER, 50],
+      [2_000, 180, 56, BUFFER, 50],
+      [2_000, FOV, 0, BUFFER, 50],
+      [2_000, FOV, 56, 0, 50],
+      [2_000, FOV, 56, BUFFER, 0],
+      [2_000, FOV, 56, BUFFER, Number.NaN],
+    ];
+    for (const args of degenerate) {
+      expect(godViewSymbolScale(...args)).toBe(GOD_SYMBOL_MIN_SCALE);
+    }
   });
 });
