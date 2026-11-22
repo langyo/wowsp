@@ -90,9 +90,10 @@ timeline the holographic map scrubs.
 
 ## The server side
 
-WoWSP is not only the desktop app: `wowsp.langyo.xyz` (the official node)
-and any self-hosted node form a small server side with three shapes built
-from one policy core (`packages/pairing-relay/crates/relay-core`):
+WoWSP is not only the desktop app: `wowsp.langyo.xyz` (the official
+node) and any self-hosted node together form a small server side with
+three shapes sharing one policy core
+(`packages/pairing-relay/crates/relay-core`):
 
 | Shape | Package | Capabilities |
 |---|---|---|
@@ -100,7 +101,7 @@ from one policy core (`packages/pairing-relay/crates/relay-core`):
 | Native binary (VPS / LAN / Docker) | `crates/relay-server` (axum + SQLite) | all |
 | Vercel edge adapter | `packages/relay-vercel` (TypeScript) | lookup + peers + blocks |
 
-Two namespaces ride on every node:
+Every node exposes two namespaces:
 
 - **Battle push** (`/gateway/*`, WebSockets) — the phone's live-stats
   channel; see `designs/gateway-push.md`.
@@ -115,8 +116,8 @@ Two namespaces ride on every node:
 On the client, every stats request first walks the configured cache
 servers (settings ▸ connection ▸ cache servers — the official node by
 default, plus community nodes from the mesh's peer list) and falls back
-to the unchanged proxy → direct chain. Running your own node is a
-first-class path: `guides/self-host-gateway.md`.
+to the usual proxy → direct chain. Running your own node is a
+supported, documented path: `guides/self-host-gateway.md`.
 
 ## Provenance
 

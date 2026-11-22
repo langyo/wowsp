@@ -22,11 +22,11 @@ view.
 | WoWSP cache-mesh node | Both (optional) | The same stats, served from a cache (official or self-hosted) |
 
 Stats lookups walk a ladder: the configured cache servers first (settings ▸
-connection ▸ cache servers; the official node plus any community nodes the
-auto-discovery verified), then the unchanged proxy → direct chain. A cached
-answer carries `x-wowsp-cache: hit|miss|peer-hit` provenance; the upstream
-health registry still records only direct-path outcomes, so a cache hit
-never flatters an upstream's health row.
+connection ▸ cache servers; the official node plus community nodes the
+auto-discovery verified), then the usual proxy → direct chain. A cached
+answer carries `x-wowsp-cache: hit|miss|peer-hit` provenance, and the
+upstream health registry still records direct-path outcomes only — a
+cache hit never makes an upstream look healthier than it is.
 
 ## Model conversion
 

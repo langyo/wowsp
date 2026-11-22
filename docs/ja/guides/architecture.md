@@ -90,7 +90,7 @@ timeline the holographic map scrubs.
 
 ## サーバーサイド
 
-WoWSP はデスクトップアプリにとどまらない。`wowsp.langyo.xyz`（公式ノード）と任意のセルフホストノードが、単一のポリシーコア（`packages/pairing-relay/crates/relay-core`）から作られた 3 形態の小さなサーバーサイドを構成する：
+WoWSP はデスクトップアプリにとどまらない。`wowsp.langyo.xyz`（公式ノード）と任意のセルフホストノードが合わさって小さなサーバーサイドを構成し、3 つの形態はいずれも単一のポリシーコア（`packages/pairing-relay/crates/relay-core`）を共有する：
 
 | 形態 | パッケージ | 機能 |
 |---|---|---|
@@ -98,12 +98,12 @@ WoWSP はデスクトップアプリにとどまらない。`wowsp.langyo.xyz`�
 | ネイティブバイナリ（VPS / LAN / Docker） | `crates/relay-server`（axum + SQLite） | すべて |
 | Vercel エッジアダプター | `packages/relay-vercel`（TypeScript） | lookup + peers + blocks |
 
-すべてのノードで 2 つの名前空間が動く：
+各ノードは 2 つの名前空間を公開する：
 
 - **バトルプッシュ**（`/gateway/*`、WebSocket）— スマートフォンのライブ戦績チャネル。`designs/gateway-push.md` を参照。
 - **キャッシュメッシュ**（`/api/lookup`、`/api/blocks`、`/api/peers`）— 公開戦績アップストリーム（vortex/WG/クラン、13 ホストの許可リスト）へのキャッシュプロキシに、コンテンツアドレス方式のブロックストア（CIDv1、`/ipfs/<cid>` ゲートウェイエイリアス付き）とブロードキャスト型 peer レジストリを加えたもので、あるプレイヤーの遅いコールドルックアップが全員のキャッシュヒットになる。`designs/cache-mesh.md` を参照（クライアント報告型結果のロードマップは `designs/cache-mesh-trust.md`）。
 
-クライアント側では、すべての戦績リクエストがまず設定済みのキャッシュサーバー（設定 ▸ 接続 ▸ キャッシュサーバー — デフォルトは公式ノード + メッシュの peer リスト由来のコミュニティノード）を経由し、その後で変わらない プロキシ → 直接 のチェーンへフォールバックする。自分のノードを運用することも第一級の道だ：`guides/self-host-gateway.md`。
+クライアント側では、すべての戦績リクエストがまず設定済みのキャッシュサーバー（設定 ▸ 接続 ▸ キャッシュサーバー — デフォルトは公式ノード + メッシュの peer リスト由来のコミュニティノード）を経由し、その後は従来どおりのプロキシ → 直接のチェーンへフォールバックする。ノードをセルフホストすることも正式にサポートされており、手順は `guides/self-host-gateway.md` にまとめられている。
 
 ## Provenance
 
