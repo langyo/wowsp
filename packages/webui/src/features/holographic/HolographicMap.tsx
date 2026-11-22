@@ -19,7 +19,7 @@ import {
   wireModelPackFromShell,
   type MapBounds,
 } from "./modelLoader";
-import { clearShipMarkerCache } from "./shipMarker";
+import { clearShipMarkerCache, shipClassTargetLen } from "./shipMarker";
 import { clearPropMarkerCache } from "./propMarker";
 import {
   clearReplayResourceContext,
@@ -113,7 +113,11 @@ import {
   exportShipCardVisible,
   type ShipLabelSpriteInput,
 } from "./exportShipLabels";
-import { adoptExportCameraLayers } from "./sceneUtils";
+import {
+  GOD_SYMBOL_TARGET_PX,
+  adoptExportCameraLayers,
+  godViewSymbolScale,
+} from "./sceneUtils";
 import HoloExportModal from "./HoloExportModal";
 import {
   EXPORT_GOD_FOV_DEG,
@@ -482,6 +486,115 @@ export function awaitExportStep(
       () => finish("done"),
     );
   });
+}
+
+/** The marker's own XZ footprint in scene units — the basis the god view's
+ *  symbol scale divides its target screen length by.
+ *
+ *  Measured in MARKER-LOCAL space (each geometry child's matrix relative to
+ *  the marker's own), so the hull's position/yaw at take start can never
+ *  inflate or shrink the cached length, and nothing about the live transform
+ *  is touched. Every geometry child counts: the installed GLB, or — on a hull
+ *  whose model never arrived — the class-scaled hull outline + cone/dot
+ *  placeholder, which are laid out at the same true class length (so the
+ *  fallback marker gets the same symbol treatment from its own extent). */
+function markerSymbolWorldLength(marker: THREE.Group): number {
+  marker.updateWorldMatrix(true, true);
+  const inverse = new THREE.Matrix4().copy(marker.matrixWorld).invert();
+  const local = new THREE.Matrix4();
+  const box = new THREE.Box3();
+  const part = new THREE.Box3();
+  marker.traverse((child) => {
+    const geometry = (child as THREE.Mesh).geometry as
+      | THREE.BufferGeometry
+      | undefined;
+    if (!geometry) return;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    if (!geometry.boundingBox) return;
+    part
+      .copy(geometry.boundingBox)
+      .applyMatrix4(local.multiplyMatrices(inverse, child.matrixWorld));
+    box.union(part);
+  });
+  const size = box.isEmpty() ? null : box.getSize(new THREE.Vector3());
+  const length = size ? Math.max(size.x, size.z) : 0;
+  if (Number.isFinite(length) && length > 1e-3) return length;
+  // Unmeasurable marker (no geometry): fall back to the class table the
+  // placeholder art is built from, which keeps the division finite.
+  return shipClassTargetLen(marker.userData.type as string | null);
+}
+
+/** Export-only symbol scaling for the 3D god view (sceneUtils.
+ *  godViewSymbolScale): the fixed full-map camera turns a true-scale hull
+ *  into a ~2 px sliver, so the take draws each hull as a TACTICAL-MAP SYMBOL
+ *  whose longest world dimension holds a constant screen length — the label
+ *  cards are already screen-constant, and a 56 px symbol under their 92 px
+ *  width keeps the card strictly dominant, as in the live view.
+ *
+ *  The markers are the LIVE scene's own objects (the clip renders the replay
+ *  scene itself, not a copy), so a symbol scale may never outlive its one
+ *  render: `apply` only scales the markers for the coming render, `restore`
+ *  puts every touched marker back to its take-start scale, and `dispose` —
+ *  the take's finally, cancellation and exception paths included — restores
+ *  anything still outstanding and drops the cached extents.
+ *
+ *  The extents are measured ONCE at take start (after the hull-model wait, so
+ *  every installed GLB is in place) and cached per marker: the per-frame work
+ *  is then one distance and one multiply per hull. */
+class GodViewSymbolScale {
+  /** Cached marker footprint in scene units. */
+  private readonly lengths = new Map<THREE.Group, number>();
+  /** The live scale each marker had at take start. */
+  private readonly originals = new Map<THREE.Group, THREE.Vector3>();
+  /** Markers scaled for the current frame's render. */
+  private readonly applied: THREE.Group[] = [];
+  private readonly tmp = new THREE.Vector3();
+
+  constructor(markers: readonly THREE.Group[]) {
+    for (const marker of markers) {
+      this.lengths.set(marker, markerSymbolWorldLength(marker));
+      this.originals.set(marker, marker.scale.clone());
+    }
+  }
+
+  /** Apply one export frame's symbol scales for `camera` (`bufferWidth` is
+   *  the logical map square the target length is measured against). */
+  apply(camera: THREE.PerspectiveCamera, bufferWidth: number): void {
+    // A previous restore normally ran in the render's finally; run it again
+    // so a throw between the two can never compound the scaling.
+    this.restore();
+    for (const [marker, length] of this.lengths) {
+      const distance = camera.position.distanceTo(
+        this.tmp.copy(marker.position),
+      );
+      marker.scale.setScalar(
+        godViewSymbolScale(
+          distance,
+          camera.fov,
+          GOD_SYMBOL_TARGET_PX,
+          bufferWidth,
+          length,
+        ),
+      );
+      this.applied.push(marker);
+    }
+  }
+
+  /** Put every touched marker back to the scale it had at take start. */
+  restore(): void {
+    for (const marker of this.applied) {
+      const original = this.originals.get(marker);
+      if (original) marker.scale.copy(original);
+    }
+    this.applied.length = 0;
+  }
+
+  /** Take end: restore everything outstanding, then drop the cache. */
+  dispose(): void {
+    this.restore();
+    this.lengths.clear();
+    this.originals.clear();
+  }
 }
 
 /** Format the replay header's `YYYYMMDD[_HHMMSS]` date-time as the clip
@@ -4112,12 +4225,18 @@ const RECORDED_DOLLY_MIN = -40;
      *  the HUD's screen-space sizing reads) points at it for this
      *  synchronous block, and the finally points it back: the render loop
      *  holds its own camera reference, so no async frame can see the swap.
-     *  Everything here must stay synchronous for that guarantee. */
+     *  Everything here must stay synchronous for that guarantee.
+     *
+     *  The hull markers' symbol scale rides the same discipline (see
+     *  GodViewSymbolScale): applied for this one render and restored in an
+     *  inner finally, BEFORE the live repaint below — the markers are shared
+     *  with the running view, which must never see a size a take put there. */
     function paintExportScene3d(
       g: CanvasRenderingContext2D,
       mapSizePx: number,
       pose: ExportGodCameraPose,
       camera: THREE.PerspectiveCamera,
+      symbols: GodViewSymbolScale | null,
     ): boolean {
       const size = Math.max(2, Math.round(mapSizePx));
       g.save();
@@ -4170,7 +4289,17 @@ const RECORDED_DOLLY_MIN = -40;
             }
           }
           for (const mat of ctx.overlayLineMats) mat.resolution.set(size, size);
-          renderer.render(scene, camera);
+          // The god view's hulls are tactical SYMBOLS, not true-scale models:
+          // size them for THIS frame's camera distance (sceneUtils.
+          // godViewSymbolScale), then undo immediately after the render — the
+          // markers are the live scene's own objects, and the live repaint in
+          // the finally below must never see the symbol scale.
+          symbols?.apply(camera, EXPORT_LOGICAL);
+          try {
+            renderer.render(scene, camera);
+          } finally {
+            symbols?.restore();
+          }
           // Same task as the render: the drawing buffer is valid until the
           // compositor takes it, so this never copies a cleared canvas.
           g.drawImage(renderer.domElement, 0, 0, EXPORT_LOGICAL, EXPORT_LOGICAL);
@@ -4358,6 +4487,10 @@ const RECORDED_DOLLY_MIN = -40;
       // In-scene ship-label sprites (3D take only): created before the encode
       // loop and disposed in the finally below.
       let shipLabelSprites: ShipLabelSpriteLayer | null = null;
+      // The god view's hull-symbol scaling (3D take only; see
+      // GodViewSymbolScale): created once the hull models have settled and
+      // disposed in the finally below.
+      let godSymbols: GodViewSymbolScale | null = null;
       let exportFrame = 0;
       const wasPlaying = playing.value;
       const resumeAt = current.value;
@@ -4688,6 +4821,13 @@ const RECORDED_DOLLY_MIN = -40;
           await waitForShipModels();
           if (exportCancel.cancelled) return;
         }
+        // Take start for the god view's hull symbols: measure each marker's
+        // footprint AFTER the model wait, so every installed GLB's real
+        // extent (or a still-missing hull's class-scaled placeholder extent)
+        // is the cached basis. The per-frame scale itself is distance-derived.
+        if (s.view === "3d" && godCamera) {
+          godSymbols = new GodViewSymbolScale(ctx.shipMarkers);
+        }
         // Frames start here; only this phase reports a percentage.
         exportPhase.value = "render";
         const result = await renderPlaybackExport({
@@ -4824,7 +4964,11 @@ const RECORDED_DOLLY_MIN = -40;
                 collectExportShipCards(t),
                 exportFrame++,
               );
-              if (paintExportScene3d(g, mapSizePx, godPose, godCamera)) return;
+              if (
+                paintExportScene3d(g, mapSizePx, godPose, godCamera, godSymbols)
+              ) {
+                return;
+              }
               if (!export3dFallbackNoticed) {
                 export3dFallbackNoticed = true;
                 toast.warning(i18nT("replay.export.view3dFallback"));
@@ -4937,6 +5081,11 @@ const RECORDED_DOLLY_MIN = -40;
         // layer, but their resources must not outlive the take).
         shipLabelSprites?.dispose();
         shipLabelSprites = null;
+        // Restore every marker the take scaled (a no-op after the normal
+        // per-frame restore; the safety net for the cancellation/exception
+        // paths, where a frame's finally may never have run).
+        godSymbols?.dispose();
+        godSymbols = null;
         exporting.value = false;
         seekBattleTime(resumeAt);
         if (wasPlaying) playing.value = true;
