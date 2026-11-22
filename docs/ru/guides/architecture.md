@@ -88,6 +88,23 @@ timeline the holographic map scrubs.
 | Build | Cargo + pnpm workspace, `just` recipes, Python tooling |
 | Docs | lagrange multilingual site |
 
+## Серверная часть
+
+WoWSP — это не только настольное приложение: `wowsp.langyo.xyz` (официальный узел) и любой узел, развёрнутый самостоятельно, образуют небольшую серверную часть из трёх форм, построенных на одном ядре политик (`packages/pairing-relay/crates/relay-core`):
+
+| Форма | Пакет | Возможности |
+|---|---|---|
+| Cloudflare Worker (официальный + самостоятельное развёртывание через мастер) | `crates/relay-worker` (Rust→wasm) | все |
+| Нативный бинарник (VPS / LAN / Docker) | `crates/relay-server` (axum + SQLite) | все |
+| Адаптер Vercel edge | `packages/relay-vercel` (TypeScript) | lookup + peers + blocks |
+
+На каждом узле работают два пространства имён:
+
+- **Пуш боевых данных** (`/gateway/*`, WebSocket) — канал живой статистики для телефона; см. `designs/gateway-push.md`.
+- **Кэш-меш** (`/api/lookup`, `/api/blocks`, `/api/peers`) — кэширующий прокси для публичных источников статистики (vortex/WG/кланы, белый список из 13 хостов) плюс хранилище блоков с адресацией по содержимому (CIDv1, с псевдонимом шлюза `/ipfs/<cid>`) и реестр пиров с рассылкой, так что медленный холодный запрос одного игрока становится кэш-попаданием для всех. См. `designs/cache-mesh.md` (о планах по результатам, сообщаемым клиентом, — `designs/cache-mesh-trust.md`).
+
+На клиенте каждый запрос статистики сначала идёт через настроенные кэш-серверы (настройки ▸ соединение ▸ кэш-серверы — по умолчанию официальный узел плюс узлы сообщества из списка пиров меша) и лишь затем откатывается к неизменной цепочке прокси → напрямую. Собственный узел — путь первого класса: `guides/self-host-gateway.md`.
+
 ## Provenance
 
 The replay-parsing, game-detection, and `tempArenaInfo.json` polling principles

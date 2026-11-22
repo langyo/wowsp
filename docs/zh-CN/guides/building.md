@@ -44,6 +44,7 @@ just lint          # fmt-check + clippy + pnpm lint + i18n 一致性
 just check         # cargo check --workspace
 just test          # cargo test --workspace（或 `just test e2e` 跑 Playwright）
 just i18n-check    # 校验各语言的 i18n key 一致性（链接 URL 仅 en-US 一份，全语言共享）
+just check-relay  # 独立的 pairing-relay 工作区：relay-core 测试 + wasm32 检查 + 原生服务端的 check/test
 ```
 
 ## 发布构建
@@ -55,6 +56,18 @@ just build installers # shun 三模式安装器（full 变体内置模型包，l
 ```
 
 前端产物输出到 `dist/webui/`，由 Tauri 通过 `tauri.conf.json` 的 `frontendDist` 消费。
+
+## 构建服务端
+
+```bash
+just build-server  # release 构建原生 wowsp-server（packages/pairing-relay，axum + SQLite）
+just run-server    # 本地运行（默认绑 127.0.0.1:8787；见 crates/relay-server/README.md）
+```
+
+Cloudflare Worker 在 `packages/pairing-relay` 里通过 `npx wrangler
+deploy` 构建（Deploy Site 工作流在合并时自动做）；Vercel 适配器从
+`packages/relay-vercel` 部署。三种形态都写在
+`guides/self-host-gateway.md`。
 
 ## 常见问题
 

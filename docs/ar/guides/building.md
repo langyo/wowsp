@@ -56,6 +56,7 @@ just lint          # fmt-check + clippy + pnpm lint + i18n parity
 just check         # cargo check --workspace
 just test          # cargo test --workspace (or `just test e2e` for Playwright)
 just i18n-check    # validate i18n key parity (link URLs are en-US-only, shared via fallback)
+just check-relay  # مساحة عمل pairing-relay المستقلة: اختبارات relay-core + فحص wasm32 + فحص/اختبارات الخادم الأصلي
 ```
 
 ## Building for release
@@ -68,6 +69,15 @@ just build installers # shun three-mode installers (full flavors bundle the mode
 
 Frontend assets are emitted to `dist/webui/` and consumed by Tauri via
 `frontendDist` in `tauri.conf.json`.
+
+## بناء الخادم
+
+```bash
+just build-server  # بناء wowsp-server الأصلي بإصدار release (packages/pairing-relay، axum + SQLite)
+just run-server    # تشغيله محليًا (يرتبط افتراضيًا بالعنوان 127.0.0.1:8787؛ انظر crates/relay-server/README.md)
+```
+
+يُبنى Cloudflare Worker عبر `npx wrangler deploy` من داخل `packages/pairing-relay` (سير عمل Deploy Site يتولى ذلك عند الدمج)، أما محوّل Vercel فيُنشر من `packages/relay-vercel`. والأشكال الثلاثة كلها مشروحة في `guides/self-host-gateway.md`.
 
 ## Common issues
 

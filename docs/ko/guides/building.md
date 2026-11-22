@@ -56,6 +56,7 @@ just lint          # fmt-check + clippy + pnpm lint + i18n parity
 just check         # cargo check --workspace
 just test          # cargo test --workspace (or `just test e2e` for Playwright)
 just i18n-check    # validate i18n key parity (link URLs are en-US-only, shared via fallback)
+just check-relay  # 독립 실행형 pairing-relay 워크스페이스: relay-core 테스트 + wasm32 검사 + 네이티브 서버의 check/테스트
 ```
 
 ## Building for release
@@ -68,6 +69,15 @@ just build installers # shun three-mode installers (full flavors bundle the mode
 
 Frontend assets are emitted to `dist/webui/` and consumed by Tauri via
 `frontendDist` in `tauri.conf.json`.
+
+## 서버 빌드
+
+```bash
+just build-server  # 네이티브 wowsp-server를 release로 빌드(packages/pairing-relay, axum + SQLite)
+just run-server    # 로컬에서 실행(기본적으로 127.0.0.1:8787에 바인딩, crates/relay-server/README.md 참고)
+```
+
+Cloudflare Worker는 `packages/pairing-relay`에서 `npx wrangler deploy`로 빌드하며(Deploy Site 워크플로가 병합 시 실행한다) Vercel 어댑터는 `packages/relay-vercel`에서 배포한다. 세 가지 형태 모두 `guides/self-host-gateway.md`에 정리되어 있다.
 
 ## Common issues
 

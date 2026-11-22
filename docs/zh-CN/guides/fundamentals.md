@@ -15,6 +15,13 @@ WoWSP 是一个 Tauri 桌面应用。同一个可执行文件既能跑独立复�
 | `<game>/profile/clientrunner.log` | 两者 | 区服识别（`Selected realm:` 行） |
 | Windows 注册表 + Steam manifest | 两者 | 游戏安装路径 |
 | Wargaming 公开 / Vortex API | 两者（可选） | 单玩家战绩（胜率、军团等） |
+| WoWSP 缓存网格节点 | 两者（可选） | 同样的战绩，由缓存（官方或自部署节点）代答 |
+
+战绩查询走一条阶梯：先走已配置的缓存服务器（设置 ▸ 连接 ▸ 缓存
+服务器；官方节点 + 自动发现验证过的社区节点），之后才是不变的
+代理 → 直连链。缓存答案带 `x-wowsp-cache: hit|miss|peer-hit` 来源
+标记；上游健康登记只记录直连路径的结果，缓存命中绝不美化上游的
+健康行。
 
 ## 模型转换
 

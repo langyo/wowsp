@@ -88,6 +88,23 @@ timeline the holographic map scrubs.
 | Build | Cargo + pnpm workspace, `just` recipes, Python tooling |
 | Docs | lagrange multilingual site |
 
+## 伺服器端
+
+WoWSP 不只是桌面應用程式：`wowsp.langyo.xyz`（官方節點）與任意自架節點構成一個規模不大的伺服器端，三種形態皆建自同一份原則核心（`packages/pairing-relay/crates/relay-core`）：
+
+| 形態 | 套件 | 能力 |
+|---|---|---|
+| Cloudflare Worker（官方 + 精靈自架） | `crates/relay-worker`（Rust→wasm） | 全部 |
+| 原生二進位檔（VPS / 區域網路 / Docker） | `crates/relay-server`（axum + SQLite） | 全部 |
+| Vercel 邊緣配接器 | `packages/relay-vercel`（TypeScript） | 查詢 + peers + 區塊 |
+
+每個節點上皆運行兩套命名空間：
+
+- **戰鬥推送**（`/gateway/*`、WebSocket）— 手機的即時戰績通道；見 `designs/gateway-push.md`。
+- **快取網格**（`/api/lookup`、`/api/blocks`、`/api/peers`）— 公開戰績上游（vortex/WG/軍團，13 主機白名單）的快取代理，加上內容定址的區塊儲存（CIDv1，附 `/ipfs/<cid>` 閘道別名）與廣播式 peer 登錄表，讓一位玩家的遲緩冷查詢變成所有人的快取命中。見 `designs/cache-mesh.md`（用戶端回報結果的路線圖見 `designs/cache-mesh-trust.md`）。
+
+在用戶端，每個戰績請求都先走已設定的快取伺服器（設定 ▸ 連線 ▸ 快取伺服器 — 預設為官方節點，加上來自網格 peer 清單的社群節點），之後才回落到不變的 代理 → 直連 鏈。自架節點是一等公民路徑：`guides/self-host-gateway.md`。
+
 ## Provenance
 
 The replay-parsing, game-detection, and `tempArenaInfo.json` polling principles

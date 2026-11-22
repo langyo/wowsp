@@ -88,6 +88,23 @@ timeline the holographic map scrubs.
 | Build | Cargo + pnpm workspace, `just` recipes, Python tooling |
 | Docs | lagrange multilingual site |
 
+## الجانب الخادم
+
+WoWSP ليس مجرد تطبيق سطح مكتب: فالعقدة `wowsp.langyo.xyz` (الرسمية) وأي عقدة ذاتية الاستضافة يشكّلان معًا جانبًا خادميًا صغيرًا بثلاثة أشكال، كلها مبنية على نواة سياسات واحدة (`packages/pairing-relay/crates/relay-core`):
+
+| الشكل | الحزمة | القدرات |
+|---|---|---|
+| Cloudflare Worker (رسمي + استضافة ذاتية عبر المعالج) | `crates/relay-worker` (Rust→wasm) | كلها |
+| ملف ثنائي أصلي (VPS / شبكة محلية / Docker) | `crates/relay-server` (axum + SQLite) | كلها |
+| محوّل Vercel الحافّي | `packages/relay-vercel` (TypeScript) | lookup + peers + blocks |
+
+على كل عقدة تعمل مساحتا اسم:
+
+- **دفع المعارك** (`/gateway/*`، WebSocket) — قناة الإحصائيات المباشرة للهاتف؛ انظر `designs/gateway-push.md`.
+- **شبكة الذاكرة المؤقتة** (`/api/lookup`، `/api/blocks`، `/api/peers`) — وسيط تخزين مؤقت للمصادر العامة للإحصائيات (vortex/WG/العشائر، قائمة السماح المكوّنة من 13 مضيفًا)، يُضاف إليه مخزن كتل مُعنوَن بالمحتوى (CIDv1، مع اسم بديل للبوابة على `/ipfs/<cid>`) وسجلّ أقران بثّي، بحيث يتحوّل الاستعلام البارد البطيء لأحد اللاعبين إلى إصابة ذاكرة مؤقتة لدى الجميع. انظر `designs/cache-mesh.md` (وخريطة طريق النتائج المُبلَّغة من العميل في `designs/cache-mesh-trust.md`).
+
+وعلى جانب العميل، يمرّ كل طلب إحصائيات أولًا عبر خوادم الذاكرة المؤقتة المُهيَّأة (الإعدادات ▸ الاتصال ▸ خوادم الذاكرة المؤقتة — العقدة الرسمية افتراضيًا، إضافةً إلى عقد المجتمع من قائمة أقران الشبكة)، ثم يعود إلى سلسلة وسيط → مباشر كما هي دون تغيير. وتشغيل عقدتك الخاصة مسار من الدرجة الأولى: `guides/self-host-gateway.md`.
+
 ## Provenance
 
 The replay-parsing, game-detection, and `tempArenaInfo.json` polling principles

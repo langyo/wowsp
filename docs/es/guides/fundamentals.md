@@ -19,6 +19,9 @@ view.
 | `<game>/profile/clientrunner.log` | Both | Realm detection (`Selected realm:` line) |
 | Windows registry + Steam manifest | Both | Game install path |
 | Wargaming Public / Vortex API | Both (optional) | Per-player stats (winrate, clan, etc.) |
+| Nodo de la malla de caché de WoWSP | Ambos (opcional) | Las mismas estadísticas, servidas desde una caché (oficial o autoalojada) |
+
+Las búsquedas de estadísticas suben por una escalera: primero los servidores de caché configurados (ajustes ▸ conexión ▸ servidores de caché; el nodo oficial más los nodos de la comunidad verificados por el autodescubrimiento), después la cadena proxy → directo, sin cambios. Una respuesta en caché lleva la procedencia `x-wowsp-cache: hit|miss|peer-hit`; el registro de salud de los orígenes sigue anotando solo los resultados de la vía directa, así que un acierto de caché nunca favorece la fila de salud de un origen.
 
 ## Model conversion
 

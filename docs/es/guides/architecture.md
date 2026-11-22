@@ -88,6 +88,23 @@ timeline the holographic map scrubs.
 | Build | Cargo + pnpm workspace, `just` recipes, Python tooling |
 | Docs | lagrange multilingual site |
 
+## El lado del servidor
+
+WoWSP no es solo la aplicación de escritorio: `wowsp.langyo.xyz` (el nodo oficial) y cualquier nodo autoalojado forman un pequeño lado del servidor con tres formas construidas sobre un único núcleo de políticas (`packages/pairing-relay/crates/relay-core`):
+
+| Forma | Paquete | Capacidades |
+|---|---|---|
+| Cloudflare Worker (oficial + autoalojamiento con el asistente) | `crates/relay-worker` (Rust→wasm) | todas |
+| Binario nativo (VPS / LAN / Docker) | `crates/relay-server` (axum + SQLite) | todas |
+| Adaptador edge de Vercel | `packages/relay-vercel` (TypeScript) | lookup + peers + blocks |
+
+Sobre cada nodo cabalgan dos espacios de nombres:
+
+- **Push de batalla** (`/gateway/*`, WebSockets) — el canal de estadísticas en vivo del teléfono; consulta `designs/gateway-push.md`.
+- **La malla de caché** (`/api/lookup`, `/api/blocks`, `/api/peers`) — un proxy de caché para los orígenes públicos de estadísticas (vortex/WG/clanes, la lista de permitidos de 13 hosts), más un almacén de bloques direccionado por contenido (CIDv1, con un alias de puerta de enlace `/ipfs/<cid>`) y un registro de pares por difusión, de modo que la búsqueda en frío y lenta de un jugador se convierte en un acierto de caché para todos. Consulta `designs/cache-mesh.md` (y `designs/cache-mesh-trust.md` para la hoja de ruta de los resultados comunicados por el cliente).
+
+En el cliente, cada petición de estadísticas recorre primero los servidores de caché configurados (ajustes ▸ conexión ▸ servidores de caché — el nodo oficial por defecto, más los nodos de la comunidad de la lista de pares de la malla) y luego cae a la cadena proxy → directo, sin cambios. Montar tu propio nodo es un camino de primera clase: `guides/self-host-gateway.md`.
+
 ## Provenance
 
 The replay-parsing, game-detection, and `tempArenaInfo.json` polling principles

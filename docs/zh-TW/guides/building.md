@@ -56,6 +56,7 @@ just lint          # fmt-check + clippy + pnpm lint + i18n parity
 just check         # cargo check --workspace
 just test          # cargo test --workspace (or `just test e2e` for Playwright)
 just i18n-check    # validate i18n key parity (link URLs are en-US-only, shared via fallback)
+just check-relay  # 獨立的 pairing-relay 工作區：relay-core 測試 + wasm32 檢查 + 原生伺服器的 check/測試
 ```
 
 ## Building for release
@@ -68,6 +69,15 @@ just build installers # shun three-mode installers (full flavors bundle the mode
 
 Frontend assets are emitted to `dist/webui/` and consumed by Tauri via
 `frontendDist` in `tauri.conf.json`.
+
+## 建置伺服器端
+
+```bash
+just build-server  # 以 release 模式建置原生 wowsp-server（packages/pairing-relay，axum + SQLite）
+just run-server    # 在本機執行（預設繫結 127.0.0.1:8787；詳見 crates/relay-server/README.md）
+```
+
+Cloudflare Worker 從 `packages/pairing-relay` 透過 `npx wrangler deploy` 建置（Deploy Site 工作流會在合併時自動執行）；Vercel 配接器則從 `packages/relay-vercel` 部署。三種形態皆涵蓋於 `guides/self-host-gateway.md`。
 
 ## Common issues
 

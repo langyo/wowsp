@@ -19,6 +19,9 @@ view.
 | `<game>/profile/clientrunner.log` | Both | Realm detection (`Selected realm:` line) |
 | Windows registry + Steam manifest | Both | Game install path |
 | Wargaming Public / Vortex API | Both (optional) | Per-player stats (winrate, clan, etc.) |
+| WoWSP キャッシュメッシュノード | 両方（任意） | 同じ戦績をキャッシュ（公式またはセルフホスト）から配信 |
+
+戦績ルックアップは階段を上る：まず設定済みのキャッシュサーバー（設定 ▸ 接続 ▸ キャッシュサーバー。公式ノード + 自動検出が検証したコミュニティノード）、次に変わらない プロキシ → 直接 チェーン。キャッシュ済みの回答には `x-wowsp-cache: hit|miss|peer-hit` の出所表示が付き、アップストリームの健全性レジストリは引き続き直接経路の結果だけを記録するため、キャッシュヒットがアップストリームの健全性行を飾ることは決してない。
 
 ## Model conversion
 
