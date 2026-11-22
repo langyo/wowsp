@@ -1,16 +1,17 @@
-"""Tests for `scripts/dev.py`'s child-tree cleanup and port guard.
+"""Tests for `scripts/dev.py`'s port-guard policy and its devguard wiring.
 
 Run standalone (not part of the visual/e2e suites):
 
     python -m pytest scripts/test_dev.py -q
 
-Covers the two regressions behind the maintainer's every-other-`just dev`:
-
-* an orphaned Vite on :5199 (run N left its child alive; run N+1's guard refused)
-  — the process-level tests spawn a REAL child tree (wrapper → port-holding
-  grandchild) and assert the tree kill frees the port;
-* the guard's mojibake on CJK paths — the PowerShell command must force UTF-8
-  console output, and the error line must carry a copy-pasteable kill command.
+The MECHANISM these tests used to cover in place now lives in
+`celestia_devtools.devguard` — the shared module promoted from this repository's
+#2095 fix — and is tested there (`celestia-devtools/tests/test_devguard.py`) on
+both of the org's runner families. What stays here is the half that is
+WoWSP's own policy: the :5199 sentence, the console-safe logging path, the
+wiring that makes the guard name the offender, and two adoption tests proving
+the shared track/tree-kill/poll path really drives a Vite-shaped child tree
+spawned by this script.
 
 MANUAL CHECK (OS-level Ctrl-C delivery, not simulated here because sending
 CTRL_C_EVENT to a console process group would also interrupt the test runner):
@@ -20,23 +21,30 @@ console), press Ctrl-C once, then confirm the child really died:
     netstat -ano | findstr :5199      # must print nothing
     python scripts/dev.py webui       # must pass the guard immediately
 
-and repeat run→Ctrl-C three times; none may report "something is already
+and repeat run -> Ctrl-C three times; none may report "something is already
 listening on :5199".
 """
 
 from __future__ import annotations
 
-import atexit
 import os
 import signal
 import socket
-import subprocess
 import sys
-import threading
 import time
 import types
+from pathlib import Path
 
 import pytest
+
+try:
+    from celestia_devtools import devguard
+except ImportError:  # pragma: no cover - environment bootstrap
+    pytest.skip(
+        "scripts/dev.py needs celestia-devtools with the shared devguard module: "
+        "pip install -U git+https://github.com/celestia-island/celestia-devtools.git",
+        allow_module_level=True,
+    )
 
 import dev
 
@@ -95,77 +103,57 @@ class _RecordingLog:
         self.messages.append(msg)
 
 
-# ── pure helpers: kill command + mojibake fix ─────────────────────────
+# ── policy: the :5199 guard's wording and exit ────────────────────────
 
-def test_kill_command_matches_platform() -> None:
-    if os.name == "nt":
-        assert dev._kill_command("44060") == "taskkill /PID 44060 /T /F"
-    else:
-        assert dev._kill_command("44060") == "kill -TERM 44060"
-
-
-def test_describe_pid_command_forces_utf8_console_output() -> None:
-    argv = dev._describe_pid_command("44060")
-    assert argv[:2] == ["powershell", "-NoProfile"]
-    assert argv[-2] == "-Command"
-    command = argv[-1]
-    assert command.startswith("[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ")
-    assert "ProcessId=44060" in command
-    # The prefix must end with '; ' so it cannot glue onto the expression.
-    assert dev._PS_UTF8_PREFIX.endswith("; ")
-
-
-def test_busy_port_message_names_pid_and_copy_pasteable_command() -> None:
-    owner = dev._PortOwner("44060", ", node.exe vite")
-    message = dev._busy_port_message(dev.VITE_PORT, owner)
-    assert "something is already listening on :5199" in message
-    assert "(pid 44060, node.exe vite)" in message
-    assert dev._kill_command("44060") in message
-
-
-def test_busy_port_message_falls_back_to_netstat_without_pid() -> None:
-    message = dev._busy_port_message(dev.VITE_PORT, dev._PortOwner(None, ""))
-    assert "something is already listening on :5199" in message
-    assert "netstat -ano | findstr :5199" in message
-    assert "taskkill" not in message
-
-
-def test_guard_error_exits_with_kill_command(monkeypatch) -> None:
+def test_guard_refusal_names_pid_and_copy_pasteable_command(monkeypatch) -> None:
     log = _RecordingLog()
     monkeypatch.setattr(dev, "_log", log)
     monkeypatch.setattr(
-        dev, "_port_occupied_by", lambda port: dev._PortOwner("44060", ", node.exe vite")
+        dev, "_port_occupied_by", lambda port: devguard.PortOwner("44060", ", node.exe vite")
     )
     with pytest.raises(SystemExit) as excinfo:
         dev._require_vite_port_free()
     assert excinfo.value.code == 1
     assert log.messages, "the guard must log before exiting"
     line = log.messages[-1]
-    assert dev._kill_command("44060") in line
+    assert ":5199" in line
+    assert devguard.kill_command("44060") in line
     assert "NOT WoWSP's dev server" in line
+    assert "Tauri would load that foreign app" in line
 
 
-def test_describe_pid_ignores_tasklist_info_line(monkeypatch) -> None:
-    """A dead pid must yield an empty identity: the CIM query comes back empty
-    and tasklist's "INFO: No tasks..." line is not an identity."""
-    if os.name != "nt":
-        pytest.skip("the tasklist fallback is Windows-only")
+def test_guard_passes_when_the_port_is_free(monkeypatch) -> None:
+    monkeypatch.setattr(dev, "_port_occupied_by", lambda port: None)
+    dev._require_vite_port_free()  # must not raise
 
-    calls: list[list[str]] = []
 
-    class _Result:
-        def __init__(self, stdout: str) -> None:
-            self.stdout = stdout
+# ── policy wiring: the guard names the offender through shared attribution ──
 
-    def fake_run(argv, **kwargs):
-        calls.append(argv)
-        if argv[0] == "powershell":
-            return _Result("")
-        return _Result("INFO: No tasks are running which match the specified criteria.\n")
+def test_port_occupied_by_names_the_listener(monkeypatch) -> None:
+    monkeypatch.setattr(devguard, "port_in_use", lambda port: True)
+    monkeypatch.setattr(devguard, "port_listener_pid", lambda port: "44060")
+    monkeypatch.setattr(devguard, "describe_pid", lambda pid: "node.exe vite")
+    assert dev._port_occupied_by(dev.VITE_PORT) == devguard.PortOwner("44060", ", node.exe vite")
 
-    monkeypatch.setattr(dev.subprocess, "run", fake_run)
-    assert dev._describe_pid("999999") == ""
-    assert [argv[0] for argv in calls] == ["powershell", "tasklist"]
+
+def test_port_occupied_by_reports_a_free_port(monkeypatch) -> None:
+    monkeypatch.setattr(devguard, "port_in_use", lambda port: False)
+    assert dev._port_occupied_by(dev.VITE_PORT) is None
+
+
+def test_port_occupied_by_without_attribution(monkeypatch) -> None:
+    # A listener the lookup cannot attribute still refuses; the message then
+    # falls back to the lookup command instead of inventing a pid.
+    monkeypatch.setattr(devguard, "port_in_use", lambda port: True)
+    monkeypatch.setattr(devguard, "port_listener_pid", lambda port: None)
+    assert dev._port_occupied_by(dev.VITE_PORT) == devguard.PortOwner(None, "")
+
+
+def test_describe_pid_wraps_the_shared_identity(monkeypatch) -> None:
+    monkeypatch.setattr(devguard, "describe_pid", lambda pid: "node.exe vite")
+    assert dev._describe_pid("44060") == ", node.exe vite"
+    monkeypatch.setattr(devguard, "describe_pid", lambda pid: "")
+    assert dev._describe_pid("44060") == ""
 
 
 def test_console_safe_preserves_cjk_on_gbk_console(monkeypatch) -> None:
@@ -180,7 +168,7 @@ def test_console_safe_replaces_unencodable_characters(monkeypatch) -> None:
     assert dev._console_safe("源") == "?"
 
 
-# ── process-level: the real tree kill ────────────────────────────────
+# ── the adoption: dev.py drives the shared track/kill/poll path ───────
 
 _HOLDER = """\
 import socket, sys, time
@@ -203,7 +191,7 @@ time.sleep(300)
 """
 
 
-def test_sigint_handler_tree_kills_port_holder(tmp_path) -> None:
+def test_run_tracks_the_tree_and_the_sigint_path_frees_the_port(tmp_path) -> None:
     """The regression: a wrapper spawns a grandchild that holds the port; the
     SIGINT path must tree-kill BOTH and free the port (an orphan here is the
     every-other-run :5199 block)."""
@@ -215,88 +203,45 @@ def test_sigint_handler_tree_kills_port_holder(tmp_path) -> None:
 
     proc = dev._run([_q(sys.executable), _q(wrapper), _q(holder), str(port)])
     try:
-        assert proc.pid in dev._LIVE_CHILDREN, "spawned children must be tracked for exit cleanup"
+        assert proc.pid in devguard.tracked(), "spawned children must be tracked for exit cleanup"
         assert _wait_until(lambda: _port_open(port)), "grandchild never bound the port"
         assert proc.poll() is None
 
         with pytest.raises(KeyboardInterrupt):
-            dev._on_signal(signal.SIGINT, None)
+            devguard._on_signal(signal.SIGINT, None)
 
         assert _wait_until(lambda: not _port_open(port)), "SIGINT path left an orphan on the port"
         assert _wait_until(lambda: proc.poll() is not None), "SIGINT path left the direct child alive"
-        assert proc.pid not in dev._LIVE_CHILDREN
+        assert proc.pid not in devguard.tracked()
     finally:
         # Tree-kill, not proc.kill(): a failed assertion must not leave the
         # 300 s port holder running.
-        dev._terminate(proc)
-        dev._cleanup_children()
+        devguard.tree_kill(proc.pid)
+        devguard.cleanup_children()
 
 
-def test_cleanup_children_is_idempotent(tmp_path) -> None:
-    sleeper = tmp_path / "sleeper.py"
-    sleeper.write_text("import time; time.sleep(300)\n", encoding="utf-8")
-    proc = dev._run([_q(sys.executable), _q(sleeper)])
-    try:
-        assert proc.poll() is None
-        dev._cleanup_children()
-        dev._cleanup_children()  # second call (atexit after signal) must be a no-op
-        assert _wait_until(lambda: proc.poll() is not None), "cleanup did not kill the long sleep"
-        assert not dev._LIVE_CHILDREN
-    finally:
-        dev._terminate(proc)
-        dev._cleanup_children()
-
-
-def test_wait_proc_returns_exit_code(tmp_path) -> None:
+def test_run_pairs_with_the_shared_poll_loop(tmp_path) -> None:
     script = tmp_path / "exit3.py"
     script.write_text("raise SystemExit(3)\n", encoding="utf-8")
     proc = dev._run([_q(sys.executable), _q(script)])
     try:
-        assert dev._wait_proc(proc) == 3
+        assert devguard.wait_poll(proc) == 3
     finally:
-        dev._terminate(proc)
+        devguard.tree_kill(proc.pid)
 
 
-def _raise_keyboard_interrupt(signum, frame) -> None:
-    raise KeyboardInterrupt
+def test_main_installs_the_shared_exit_hooks(monkeypatch) -> None:
+    installed: list = []
+    monkeypatch.setattr(devguard, "install_exit_hooks", lambda notify=None: installed.append(notify))
+    monkeypatch.setattr(dev, "run_native", lambda args: 0)
+    assert dev.main() == 0
+    assert installed == [dev._notify_signal], "main() must install devguard's hooks with this repo's logger"
 
 
-def test_wait_proc_dispatches_signal_while_child_alive(tmp_path) -> None:
-    """The poll loop is what lets a signal handler tree-kill a child that
-    ignores Ctrl+C; a blocking Popen.wait() would only run the handler after
-    the child exits."""
-    sleeper = tmp_path / "waitsleeper.py"
-    sleeper.write_text("import time; time.sleep(300)\n", encoding="utf-8")
-    proc = dev._run([_q(sys.executable), _q(sleeper)])
-    previous = signal.signal(signal.SIGINT, _raise_keyboard_interrupt)
-    timer = threading.Timer(1.0, signal.raise_signal, args=(signal.SIGINT,))
-    timer.start()
-    try:
-        started = time.monotonic()
-        with pytest.raises(KeyboardInterrupt):
-            dev._wait_proc(proc)
-        assert time.monotonic() - started < 5.0, "the wait must not block until the child exits"
-        assert proc.poll() is None, "the handler must run while the child is still alive"
-    finally:
-        timer.cancel()
-        timer.join()
-        signal.signal(signal.SIGINT, previous)
-        dev._terminate(proc)
-
-
-def test_install_exit_hooks_is_idempotent(monkeypatch) -> None:
-    saved = {}
-    for name in ("SIGINT", "SIGBREAK", "SIGTERM", "SIGHUP"):
-        sig = getattr(signal, name, None)
-        if sig is not None:
-            saved[sig] = signal.getsignal(sig)
-    monkeypatch.setattr(dev, "_EXIT_HOOKS_INSTALLED", False)
-    try:
-        dev._install_exit_hooks()
-        dev._install_exit_hooks()  # must not raise or double-register
-        for sig in saved:
-            assert signal.getsignal(sig) is dev._on_signal
-    finally:
-        for sig, handler in saved.items():
-            signal.signal(sig, handler)
-        atexit.unregister(dev._cleanup_children)
+def test_dev_py_keeps_no_private_child_registry() -> None:
+    """The duplication the promotion removed must not creep back: a local
+    registry/tree-kill/port-guard copy would silently diverge from the shared
+    module again."""
+    source = Path(dev.__file__).read_text(encoding="utf-8")
+    for gone in ("_LIVE_CHILDREN", "def _track_child", "def _terminate(", "def _install_exit_hooks", "def _busy_port_message", "_PS_UTF8_PREFIX"):
+        assert gone not in source, f"{gone} should live in celestia_devtools.devguard now"
