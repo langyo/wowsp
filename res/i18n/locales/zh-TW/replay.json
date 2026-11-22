@@ -589,6 +589,7 @@
     "title": "匯出重播",
     "format": "格式",
     "formatVideo": "影片（MP4）",
+    "formatVideoWebm": "影片（WebM）",
     "formatGif": "GIF 動圖",
     "view": "視角",
     "view2d": "2D 戰術圖",

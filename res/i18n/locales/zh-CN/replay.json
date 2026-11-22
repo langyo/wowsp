@@ -589,6 +589,7 @@
     "title": "导出回放",
     "format": "格式",
     "formatVideo": "视频（MP4）",
+    "formatVideoWebm": "视频（WebM）",
     "formatGif": "GIF 动图",
     "view": "视角",
     "view2d": "2D 战术图",

@@ -589,6 +589,7 @@
     "title": "Экспорт повтора",
     "format": "Формат",
     "formatVideo": "Видео (MP4)",
+    "formatVideoWebm": "Видео (WebM)",
     "formatGif": "GIF-анимация",
     "view": "Вид",
     "view2d": "2D тактическая карта",

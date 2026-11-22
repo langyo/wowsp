@@ -5,8 +5,10 @@
  *  toggle's full-width fallback, the 过街老鼠 row's blank stat band), the
  *  header's pill-centred corner blocks, the recorder panel's 292px band
  *  budget and its enlarged, unchromed ribbon art, and the top-anchored
- *  chat transcript, the fixed 3D export camera's bounds fit, and the
- *  modal's 2D/3D view button group. The painters are driven with a recording
+ *  chat transcript, the fixed 3D export camera's bounds fit, the resolution
+ *  ladders + per-format defaults (4K video rung, 720p GIF floor), the
+ *  MP4/WebM codec ladders, and the modal's format (MP4 / WebM / GIF) and
+ *  2D/3D pill groups. The painters are driven with a recording
  *  2D context — no real canvas, no encoders; the modal mounts hikari's real
  *  pill group (its teleported chrome is queried off the body). */
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -49,7 +51,11 @@ import {
   EXPORT_CHAT_FIRST_ROW_DY,
   teamIdentityCell,
   teamStatBandWidth,
-  PLAYBACK_CODEC_LADDER,
+  PLAYBACK_CODEC_LADDER_MP4,
+  PLAYBACK_CODEC_LADDER_WEBM,
+  playbackCodecLadder,
+  PLAYBACK_EXPORT_DEFAULT_FPS,
+  PLAYBACK_EXPORT_DEFAULT_SIZE,
   EXPORT_LOGICAL,
   EXPORT_SIDE_W,
   EXPORT_TOTAL_LOGICAL,
@@ -204,16 +210,19 @@ describe("frameTimesAtSpeed", () => {
 
 describe("clampExportSettings", () => {
   it("keeps on-ladder values untouched", () => {
-    const s = clampExportSettings({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true, view: "3d" });
-    expect(s).toEqual({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true, view: "3d" });
+    const s = clampExportSettings({ format: "video", container: "mp4", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true, view: "3d" });
+    expect(s).toEqual({ format: "video", container: "mp4", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true, view: "3d" });
   });
 
   it("re-bases fps, speed and size when the format flips", () => {
-    const s = clampExportSettings({ format: "gif", from: 0, to: 60, fps: 60, speed: 3, size: 1080, footer: true, stats: false, view: "2d" });
-    // (1080 is off the GIF width ladder → falls to the ladder's smallest.)
+    const s = clampExportSettings({ format: "gif", container: "mp4", from: 0, to: 60, fps: 60, speed: 3, size: 640, footer: true, stats: false, view: "2d" });
+    // (640 was the old GIF top rung and is off the new ladder → the GIF
+    // DEFAULT, 720 — the ladder's smallest rung happens to match, so pin
+    // the value itself.)
     expect(s.format).toBe("gif");
+    expect(PLAYBACK_EXPORT_DEFAULT_SIZE.gif).toBe(720);
+    expect(s.size).toBe(720);
     expect(PLAYBACK_EXPORT_FPS.gif).toContain(s.fps);
-    expect(PLAYBACK_EXPORT_SIZES.gif).toContain(s.size);
     expect([1, 2, 5, 10, 20]).toContain(s.speed);
     // Neither the stats toggle nor the view is a ladder value - both
     // survive a format flip.
@@ -221,9 +230,47 @@ describe("clampExportSettings", () => {
     expect(s.view).toBe("2d");
   });
 
+  it("keeps the 4K rung and re-seeds an off-ladder width to the format default", () => {
+    const base = {
+      format: "video" as const,
+      container: "mp4" as const,
+      from: 0,
+      to: 60,
+      fps: 30,
+      speed: 5,
+      footer: true,
+      stats: true,
+      view: "2d" as const,
+    };
+    expect(clampExportSettings({ ...base, size: 2160 }).size).toBe(2160);
+    expect(clampExportSettings({ ...base, size: 1920 }).size).toBe(1920);
+    // 720 is the GIF default, not a video rung: a stale value re-seeds to
+    // the 2K video default instead of offering a soft 720p take.
+    expect(clampExportSettings({ ...base, size: 720 }).size).toBe(1920);
+  });
+
+  it("defaults an unknown / absent video container to MP4 and keeps WebM", () => {
+    const base = {
+      format: "video" as const,
+      from: 0,
+      to: 60,
+      fps: 30,
+      speed: 5,
+      size: 1920,
+      footer: true,
+      stats: true,
+      view: "2d" as const,
+    };
+    expect(clampExportSettings({ ...base, container: "webm" }).container).toBe("webm");
+    expect(clampExportSettings({ ...base, container: "mov" as unknown as "mp4" }).container).toBe("mp4");
+    // A settings object predating the container field keeps the default.
+    expect(clampExportSettings({ ...base } as unknown as PlaybackExportSettings).container).toBe("mp4");
+  });
+
   it("keeps a 3D view and re-bases anything else to the 2D painting", () => {
     const base = {
       format: "video" as const,
+      container: "mp4" as const,
       from: 0,
       to: 60,
       fps: 30,
@@ -369,21 +416,46 @@ describe("team header structure", () => {
   });
 });
 
-describe("PLAYBACK_CODEC_LADDER", () => {
-  it("ships VP9 then AV1 inside MP4, H.264 as the last resort", () => {
-    expect(PLAYBACK_CODEC_LADDER).toEqual([
-      { codec: "vp9", ext: "mp4" },
-      { codec: "av1", ext: "mp4" },
-      { codec: "avc", ext: "mp4" },
-    ]);
+describe("playback codec ladders", () => {
+  it("keeps H.264 as the default MP4 pair, with MP4-native fallbacks", () => {
+    expect(playbackCodecLadder("mp4")).toEqual(PLAYBACK_CODEC_LADDER_MP4);
+    expect(playbackCodecLadder("mp4")[0]).toEqual({ codec: "avc", ext: "mp4" });
+    // Every MP4 rung lands in the MP4 container the modal advertises.
+    expect(PLAYBACK_CODEC_LADDER_MP4.every((r) => r.ext === "mp4")).toBe(true);
   });
 
-  it("never muxes VP8 into MP4 (no player decodes vp08)", () => {
-    for (const rung of PLAYBACK_CODEC_LADDER) {
-      expect(rung.codec).not.toBe("vp8");
+  it("forces the VP9 pair when the WebM pill is picked", () => {
+    expect(playbackCodecLadder("webm")).toEqual(PLAYBACK_CODEC_LADDER_WEBM);
+    expect(playbackCodecLadder("webm")[0]).toEqual({ codec: "vp9", ext: "webm" });
+    // WebM rungs never leak back into the MP4 container.
+    expect(PLAYBACK_CODEC_LADDER_WEBM.every((r) => r.ext === "webm")).toBe(true);
+    // ... and the MP4 ladder never asks for WebM's last-resort codec, which
+    // no mainstream player decodes inside ISO BMFF (Chromium's canPlayType
+    // refuses vp08, ffmpeg refuses to mux it).
+    expect(PLAYBACK_CODEC_LADDER_MP4.some((r) => r.codec === "vp8")).toBe(false);
+  });
+});
+
+describe("resolution ladders", () => {
+  it("adds the 4K rung to video while the default stays 2K", () => {
+    expect(PLAYBACK_EXPORT_SIZES.video).toEqual([1080, 1440, 1920, 2160]);
+    expect(PLAYBACK_EXPORT_DEFAULT_SIZE.video).toBe(1920);
+    expect(PLAYBACK_EXPORT_SIZES.video).toContain(PLAYBACK_EXPORT_DEFAULT_SIZE.video);
+  });
+
+  it("lifts GIF to 720p / 1080p / 2K with 720p as the default", () => {
+    expect(PLAYBACK_EXPORT_SIZES.gif).toEqual([720, 1080, 1920]);
+    expect(PLAYBACK_EXPORT_DEFAULT_SIZE.gif).toBe(720);
+    expect(PLAYBACK_EXPORT_SIZES.gif).toContain(PLAYBACK_EXPORT_DEFAULT_SIZE.gif);
+  });
+
+  it("seeds a default fps beside every format's size default", () => {
+    expect(PLAYBACK_EXPORT_DEFAULT_FPS.video).toBe(30);
+    expect(PLAYBACK_EXPORT_DEFAULT_FPS.gif).toBe(10);
+    for (const format of ["video", "gif"] as const) {
+      expect(PLAYBACK_EXPORT_FPS[format]).toContain(PLAYBACK_EXPORT_DEFAULT_FPS[format]);
+      expect(PLAYBACK_EXPORT_SIZES[format]).toContain(PLAYBACK_EXPORT_DEFAULT_SIZE[format]);
     }
-    // Every rung lands in the MP4 container the modal advertises.
-    expect(PLAYBACK_CODEC_LADDER.every((r) => r.ext === "mp4")).toBe(true);
   });
 });
 
@@ -1960,6 +2032,7 @@ describe("HoloExportModal view toggle", () => {
   const settings = (over: Partial<PlaybackExportSettings> = {}): PlaybackExportSettings => ({
     format: "video",
     view: "2d",
+    container: "mp4",
     from: 0,
     to: 60,
     fps: 30,
@@ -2013,5 +2086,86 @@ describe("HoloExportModal view toggle", () => {
     after3d[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
     expect(s.view).toBe("2d");
+  });
+});
+
+/* ── Modal wiring: the format / container pills ─────────────────────────
+   The format row carries THREE pills now: the two video containers plus
+   GIF. Picking a video pill writes format + container; flipping the FORMAT
+   re-seeds fps/size to that format's default (2K @ 30 for video, 720p @ 10
+   for GIF) while a pure container switch leaves the ladders untouched. */
+
+describe("HoloExportModal format toggle", () => {
+  const settings = (): PlaybackExportSettings => ({
+    format: "video",
+    view: "2d",
+    container: "mp4",
+    from: 0,
+    to: 60,
+    fps: 30,
+    speed: 5,
+    size: 1920,
+    footer: true,
+    stats: true,
+  });
+
+  /** hikari's modal teleports to the overlay root, so query the body; the
+   *  format group is the FIRST group in the body (the view group follows). */
+  const formatPills = (): HTMLButtonElement[] =>
+    Array.from(
+      document.body
+        .querySelectorAll<HTMLElement>('[role="group"]')[0]
+        .querySelectorAll<HTMLButtonElement>("button"),
+    );
+
+  const click = async (pill: HTMLButtonElement): Promise<void> => {
+    pill.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+  };
+
+  it("offers MP4 / WebM / GIF and writes the container + format defaults", async () => {
+    const s = settings();
+    mount(HoloExportModal, {
+      props: {
+        modelValue: true,
+        settings: s,
+        duration: 600,
+        current: 0,
+        exportDir: null,
+        onStart: () => {},
+      },
+      attachTo: document.body,
+    });
+    await nextTick();
+    const pills = formatPills();
+    expect(pills.map((p) => p.textContent?.trim())).toEqual([
+      i18nT("replay.export.formatVideo"),
+      i18nT("replay.export.formatVideoWebm"),
+      i18nT("replay.export.formatGif"),
+    ]);
+    // MP4 is the shipped default.
+    expect(pills[0].getAttribute("aria-pressed")).toBe("true");
+    expect(pills[1].getAttribute("aria-pressed")).toBe("false");
+
+    // WebM pill: format stays video, the container flips, the ladders stay.
+    await click(formatPills()[1]);
+    expect(s.format).toBe("video");
+    expect(s.container).toBe("webm");
+    expect(s.size).toBe(1920);
+    expect(s.fps).toBe(30);
+    expect(formatPills()[1].getAttribute("aria-pressed")).toBe("true");
+
+    // GIF pill: the image format's own defaults (720p @ 10 fps).
+    await click(formatPills()[2]);
+    expect(s.format).toBe("gif");
+    expect(s.size).toBe(720);
+    expect(s.fps).toBe(10);
+
+    // Back to video: the 2K @ 30 fps default returns, with MP4 selected.
+    await click(formatPills()[0]);
+    expect(s.format).toBe("video");
+    expect(s.container).toBe("mp4");
+    expect(s.size).toBe(1920);
+    expect(s.fps).toBe(30);
   });
 });

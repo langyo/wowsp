@@ -406,7 +406,13 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
     // mux (~100 B, unplayable) — judge by frames, not by buffer size.
     if (!encodedAny) {
       if (cancelled()) {
-        return { blob: new Blob([], { type: "video/mp4" }), ext: picked.ext, cancelled: true };
+        // The empty placeholder still names the container the run was
+        // muxing into (a WebM take must not claim video/mp4).
+        return {
+          blob: new Blob([], { type: picked.ext === "mp4" ? "video/mp4" : "video/webm" }),
+          ext: picked.ext,
+          cancelled: true,
+        };
       }
       return null;
     }

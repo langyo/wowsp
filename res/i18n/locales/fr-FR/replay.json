@@ -589,6 +589,7 @@
     "title": "Exporter le replay",
     "format": "Format",
     "formatVideo": "Vidéo (MP4)",
+    "formatVideoWebm": "Vidéo (WebM)",
     "formatGif": "GIF animé",
     "view": "Vue",
     "view2d": "Carte tactique 2D",

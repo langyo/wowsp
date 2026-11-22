@@ -589,6 +589,7 @@
     "title": "리플레이 내보내기",
     "format": "형식",
     "formatVideo": "동영상(MP4)",
+    "formatVideoWebm": "동영상(WebM)",
     "formatGif": "GIF 애니메이션",
     "view": "시점",
     "view2d": "2D 전술 지도",
