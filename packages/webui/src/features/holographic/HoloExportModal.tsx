@@ -2,10 +2,10 @@
  * Replay-playback export modal (the playback bar's export button) — the
  * single surface the take is configured on:
  *
- *   · FORMAT   hikari HkPillToggleGroup (视频（MP4）/ 视频（WebM）/ GIF) —
- *              a standard toggle group, not a menu: the two video pills are
- *              the CONTAINER choice (MP4 = H.264 compatibility, WebM = VP9
- *              compression), the third the image format;
+ *   · FORMAT   hikari HkPillToggleGroup (视频（MP4）/ 视频（WebM）/ GIF /
+ *              WebP) — a standard toggle group, not a menu: the two video
+ *              pills are the CONTAINER choice (MP4 = H.264 compatibility,
+ *              WebM = VP9 compression), the last two the image formats;
  *   · PARAMS   fps / speed / resolution on ONE row (three ladders);
  *   · RANGE    hikari HkRangeRibbon — the sequence-ribbon waterfall with a
  *              draggable window over the battle timeline. The window IS
@@ -43,7 +43,9 @@ import {
   exportMaxSpan,
   frameTimesAtSpeed,
   gifDelayMs,
+  isImageFormat,
   normalizeExportRange,
+  webpDelayMs,
   type PlaybackExportFormat,
   type PlaybackExportSettings,
 } from "./playbackExport";
@@ -92,42 +94,57 @@ export default defineComponent({
         frameTimesAtSpeed(range.value.from, range.value.to, props.settings.fps, props.settings.speed)
           .length,
     );
+    /** Is the take an IMAGE format (GIF / WebP)? They share the ladder,
+     *  the frame budget, the auto-shrinking range and the progress card's
+     *  live size estimate; only the container differs. */
+    const imageFormat = computed(() => isImageFormat(props.settings.format));
     const seconds = computed(() => {
       if (frameCount.value === 0) return 0;
-      const per = props.settings.format === "gif"
-        ? gifDelayMs(props.settings.fps) / 1000
-        : 1 / props.settings.fps;
+      // Each format's real per-frame duration: GIF snaps to centiseconds,
+      // WebP stores plain milliseconds, video runs on the fps grid.
+      const per =
+        props.settings.format === "gif"
+          ? gifDelayMs(props.settings.fps) / 1000
+          : props.settings.format === "webp"
+            ? webpDelayMs(props.settings.fps) / 1000
+            : 1 / props.settings.fps;
       return Math.round(frameCount.value * per);
     });
     /** Video over its in-memory budget is refused (the muxer holds the
-     *  whole track); GIF never trips this — its window auto-shrinks. */
+     *  whole track); the image formats never trip this — their window
+     *  auto-shrinks. */
     const tooLong = computed(
-      () => props.settings.format !== "gif" && frameCount.value > exportFrameBudget("video"),
+      () => !imageFormat.value && frameCount.value > exportFrameBudget("video"),
     );
-    /** GIF silently shortened the requested end — say so, with the cap. */
+    /** An image take silently shortened the requested end — say so, with
+     *  the cap. */
     const clamped = computed(
       () =>
-        props.settings.format === "gif" &&
-        props.settings.to - range.value.from > exportMaxSpan("gif", props.settings.fps, props.settings.speed) + 1e-6,
+        imageFormat.value &&
+        props.settings.to - range.value.from >
+          exportMaxSpan(props.settings.format, props.settings.fps, props.settings.speed) + 1e-6,
     );
 
     const ribbonDomain = computed<number[]>(() => [0, Math.max(1, props.duration)]);
     const ribbonWindow = computed<number[]>(() => [range.value.from, range.value.to]);
-    /** The format row's pills: the two video containers plus GIF. A video
-     *  pill carries its container in the value ("video:mp4" / "video:webm")
-     *  because the settings model keeps format and container separate. */
+    /** The format row's pills: the two video containers plus the two image
+     *  formats. A video pill carries its container in the value
+     *  ("video:mp4" / "video:webm") because the settings model keeps format
+     *  and container separate. */
     const formatPills = computed<{ value: string; label: string }[]>(() => [
       { value: "video:mp4", label: i18nT("replay.export.formatVideo") },
       { value: "video:webm", label: i18nT("replay.export.formatVideoWebm") },
       { value: "gif", label: i18nT("replay.export.formatGif") },
+      { value: "webp", label: i18nT("replay.export.formatWebp") },
     ]);
     const formatPick = computed(() =>
-      props.settings.format === "gif"
-        ? "gif"
+      props.settings.format === "gif" || props.settings.format === "webp"
+        ? props.settings.format
         : `video:${props.settings.container === "webm" ? "webm" : "mp4"}`,
     );
     const setFormat = (v: string): void => {
-      const next: PlaybackExportFormat = v === "gif" ? "gif" : "video";
+      const next: PlaybackExportFormat =
+        v === "gif" ? "gif" : v === "webp" ? "webp" : "video";
       const formatChanged = next !== props.settings.format;
       props.settings.format = next;
       if (next === "video") {
@@ -135,9 +152,9 @@ export default defineComponent({
       }
       // A CONTAINER switch (both pills are video) leaves the ladders alone;
       // a FORMAT switch re-seeds them to that format's own default (video:
-      // 2K @ 30 fps, GIF: 720p @ 10 fps). An "if it is on the ladder keep
-      // it" check would carry a 2K GIF over from a video take — the exact
-      // illegible/oversized case the new defaults exist to prevent.
+      // 2K @ 30 fps, GIF / WebP: 720p @ 10 fps). An "if it is on the ladder
+      // keep it" check would carry a 2K GIF over from a video take — the
+      // exact illegible/oversized case the new defaults exist to prevent.
       if (!formatChanged) return;
       props.settings.fps = PLAYBACK_EXPORT_DEFAULT_FPS[next];
       props.settings.size = PLAYBACK_EXPORT_DEFAULT_SIZE[next];
@@ -237,7 +254,9 @@ export default defineComponent({
               modelValue={String(props.settings.size)}
               options={PLAYBACK_EXPORT_SIZES[props.settings.format].map((s) => ({
                 value: String(s),
-                label: props.settings.format === "gif" ? `${s} px` : `${s}p`,
+                // The image ladders pick the composition WIDTH (px); the video
+                // ladders are the familiar "1080p" reading.
+                label: isImageFormat(props.settings.format) ? `${s} px` : `${s}p`,
               }))}
               onUpdate:modelValue={(v: string) => {
                 const s = Number(v);
@@ -320,6 +339,22 @@ export default defineComponent({
           <p class="holo-export__estimate">
             {i18nT("replay.export.estimate", { n: frameCount.value, s: seconds.value })}
           </p>
+          {/* Common chat platforms' attachment limits, as small print under
+              the take's stats — IMAGE formats only (a video take is not what
+              these numbers are about). Reference values, verified 2026-11-22:
+              Discord's free tier went 10 → 20 MB on 2026-08-14; Telegram caps
+              a photo message at 10 MB and files at 2 GB (4 GB Premium); QQ's
+              media API degrades images over ~20 MB to file uploads. */}
+          {imageFormat.value ? (
+            <div class="holo-export__limits">
+              <p class="holo-export__limits-line">
+                {i18nT("replay.export.platformLimits")}
+              </p>
+              <p class="holo-export__limits-note">
+                {i18nT("replay.export.platformLimitsNote")}
+              </p>
+            </div>
+          ) : null}
           {tooLong.value ? (
             <p class="holo-export__warn">
               {i18nT("replay.export.tooLong", { n: exportFrameBudget("video") })}

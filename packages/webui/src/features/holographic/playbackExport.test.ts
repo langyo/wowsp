@@ -68,10 +68,16 @@ import {
   EXPORT_GOD_TILT_DEG,
   fitShrinkSize,
   fitTeamName,
+  formatExportSize,
   frameTimesAtSpeed,
   gifDelayMs,
+  isImageFormat,
+  playbackExportSizeEstimate,
   playbackExportLayout,
   teamEntryCapacity,
+  webpDelayMs,
+  exportFrameBudget,
+  PLAYBACK_EXPORT_DEFAULT_SPEED,
   visibleTeamStats,
   drawPlaybackTeamColumn,
   EXPORT_RECORDER_BLOCK_H,
@@ -114,6 +120,7 @@ import type { ShotFooterStrings } from "@/features/share/shotKit";
 import type {
   PlaybackCapChip,
   PlaybackChatLine,
+  PlaybackExportFormat,
   PlaybackExportRequest,
   PlaybackExportSettings,
   ExportGodCameraPose,
@@ -449,10 +456,17 @@ describe("resolution ladders", () => {
     expect(PLAYBACK_EXPORT_SIZES.gif).toContain(PLAYBACK_EXPORT_DEFAULT_SIZE.gif);
   });
 
+  it("gives animated WebP GIF's exact ladder and default", () => {
+    expect(PLAYBACK_EXPORT_SIZES.webp).toEqual(PLAYBACK_EXPORT_SIZES.gif);
+    expect(PLAYBACK_EXPORT_DEFAULT_SIZE.webp).toBe(720);
+    expect(PLAYBACK_EXPORT_FPS.webp).toEqual(PLAYBACK_EXPORT_FPS.gif);
+    expect(PLAYBACK_EXPORT_DEFAULT_SPEED.webp).toBe(10);
+  });
+
   it("seeds a default fps beside every format's size default", () => {
     expect(PLAYBACK_EXPORT_DEFAULT_FPS.video).toBe(30);
     expect(PLAYBACK_EXPORT_DEFAULT_FPS.gif).toBe(10);
-    for (const format of ["video", "gif"] as const) {
+    for (const format of ["video", "gif", "webp"] as const) {
       expect(PLAYBACK_EXPORT_FPS[format]).toContain(PLAYBACK_EXPORT_DEFAULT_FPS[format]);
       expect(PLAYBACK_EXPORT_SIZES[format]).toContain(PLAYBACK_EXPORT_DEFAULT_SIZE[format]);
     }
@@ -479,6 +493,20 @@ describe("export range helpers", () => {
     expect(clampRangeToBudget(100, 300, "gif", 10, 10)).toBe(300);
   });
 
+  it("auto-shrinks a WebP window to the shared image budget", () => {
+    // The image formats share the 1500-frame cap, the shrink and the span.
+    expect(exportFrameBudget("webp")).toBe(GIF_MAX_FRAMES);
+    expect(exportFrameBudget("webp")).toBe(exportFrameBudget("gif"));
+    expect(exportMaxSpan("webp", 10, 10)).toBe(exportMaxSpan("gif", 10, 10));
+    expect(clampRangeToBudget(0, 5000, "webp", 10, 10)).toBeCloseTo(
+      exportMaxSpan("webp", 10, 10),
+      6,
+    );
+    expect(clampRangeToBudget(100, 300, "webp", 10, 10)).toBe(300);
+    const long = normalizeExportRange(0, 5000, 5000, "webp", 10, 10);
+    expect(long.to).toBeCloseTo(exportMaxSpan("webp", 10, 10), 6);
+  });
+
   it("normalizeExportRange orders, clamps and caps the window", () => {
     const r = normalizeExportRange(50, 10, 600, "video", 30, 1);
     expect(r.from).toBe(10);
@@ -493,6 +521,101 @@ describe("export range helpers", () => {
     expect(gif.to).toBe(600);
     const long = normalizeExportRange(0, 5000, 5000, "gif", 10, 10);
     expect(long.to).toBeCloseTo(exportMaxSpan("gif", 10, 10), 6);
+  });
+});
+
+describe("webp format plumbing", () => {
+  it("is an IMAGE format: auto-shrink, image budget, GIF's ladder", () => {
+    expect(isImageFormat("webp")).toBe(true);
+    expect(isImageFormat("gif")).toBe(true);
+    expect(isImageFormat("video")).toBe(false);
+    // A WebP take never trips the video-only refusal.
+    expect(exportFrameBudget("webp")).toBeLessThan(exportFrameBudget("video"));
+  });
+
+  it("clamps a switched take onto the image ladders and defaults", () => {
+    // A 4K video take flipped to WebP: the off-ladder width re-seeds to the
+    // image DEFAULT (720), and fps/speed fall to the image defaults too.
+    const s = clampExportSettings({
+      format: "webp",
+      container: "mp4",
+      from: 0,
+      to: 60,
+      fps: 60,
+      speed: 3,
+      size: 2160,
+      footer: true,
+      stats: true,
+      view: "3d",
+    });
+    expect(s.format).toBe("webp");
+    expect(s.size).toBe(720);
+    expect(s.fps).toBe(10);
+    expect(s.speed).toBe(10);
+    // The non-ladder settings survive the flip (view/stats/container).
+    expect(s.view).toBe("3d");
+    expect(s.stats).toBe(true);
+    expect(s.container).toBe("mp4");
+    // On-ladder image values are kept as-is.
+    const kept = clampExportSettings({ ...s, fps: 15, speed: 5, size: 1080 });
+    expect(kept.fps).toBe(15);
+    expect(kept.speed).toBe(5);
+    expect(kept.size).toBe(1080);
+  });
+
+  it("stores WebP frame durations in plain milliseconds", () => {
+    expect(webpDelayMs(10)).toBe(100);
+    expect(webpDelayMs(15)).toBe(67); // 66.7 ms, not GIF's 70 ms grid
+    expect(gifDelayMs(15)).toBe(70);
+    // A pathological frame rate still yields a renderable duration.
+    expect(webpDelayMs(0)).toBe(1000);
+    expect(webpDelayMs(5000)).toBe(1);
+  });
+});
+
+describe("playbackExportSizeEstimate (the image formats' live readout)", () => {
+  it("stays silent until ~5% of the take is encoded", () => {
+    // 1000 frames: the gate is frame 50 (5%).
+    expect(playbackExportSizeEstimate(0, 0, 1000)).toBeNull();
+    expect(playbackExportSizeEstimate(49, 49 * 12_000, 1000)).toBeNull();
+    const first = playbackExportSizeEstimate(50, 50 * 12_000, 1000);
+    expect(first).not.toBeNull();
+    expect(first!.frames).toBe(50);
+    expect(first!.bytes).toBe(600_000);
+  });
+
+  it("extrapolates avg frame bytes across the whole take", () => {
+    const est = playbackExportSizeEstimate(100, 100 * 40_000, 1000)!;
+    // avg = 40 kB/frame × 1000 frames = 40 MB (decimal bytes here).
+    expect(est).toEqual({ frames: 100, bytes: 4_000_000, estimateBytes: 40_000_000 });
+    // A late reading with the same average keeps the same total.
+    expect(playbackExportSizeEstimate(500, 500 * 40_000, 1000)!.estimateBytes).toBe(40_000_000);
+    // A heavier first half lifts the extrapolation (it is a live average).
+    expect(playbackExportSizeEstimate(500, 500 * 80_000, 1000)!.estimateBytes).toBe(80_000_000);
+  });
+
+  it("scales the 5% gate to a short take (never zero)", () => {
+    // 3 frames: ceil(0.15) = 1, so the very first frame already estimates.
+    expect(playbackExportSizeEstimate(3, 9000, 3)!.estimateBytes).toBe(9000);
+    expect(playbackExportSizeEstimate(1, 5000, 3)!.estimateBytes).toBe(15000);
+  });
+
+  it("refuses an empty or non-finite take", () => {
+    expect(playbackExportSizeEstimate(0, 0, 0)).toBeNull();
+    expect(playbackExportSizeEstimate(1, 100, 0)).toBeNull();
+    expect(playbackExportSizeEstimate(Number.NaN, 100, 10)).toBeNull();
+    expect(playbackExportSizeEstimate(5, Number.NaN, 10)).toBeNull();
+    expect(playbackExportSizeEstimate(5, 0, 10)).toBeNull();
+    expect(playbackExportSizeEstimate(5, 100, Number.POSITIVE_INFINITY)).toBeNull();
+  });
+
+  it("formats the readout in MB", () => {
+    expect(formatExportSize(0)).toBe("< 0.1 MB");
+    expect(formatExportSize(50 * 1024)).toBe("< 0.1 MB");
+    expect(formatExportSize(1.5 * 1024 * 1024)).toBe("1.5 MB");
+    expect(formatExportSize(5 * 1024 * 1024)).toBe("5.0 MB");
+    expect(formatExportSize(12.34 * 1024 * 1024)).toBe("12 MB");
+    expect(formatExportSize(0.1 * 1024 * 1024)).toBe("0.1 MB");
   });
 });
 
@@ -2090,10 +2213,11 @@ describe("HoloExportModal view toggle", () => {
 });
 
 /* ── Modal wiring: the format / container pills ─────────────────────────
-   The format row carries THREE pills now: the two video containers plus
-   GIF. Picking a video pill writes format + container; flipping the FORMAT
-   re-seeds fps/size to that format's default (2K @ 30 for video, 720p @ 10
-   for GIF) while a pure container switch leaves the ladders untouched. */
+   The format row carries FOUR pills now: the two video containers plus the
+   two image formats (GIF / WebP). Picking a video pill writes format +
+   container; flipping the FORMAT re-seeds fps/size to that format's default
+   (2K @ 30 for video, 720p @ 10 for both image formats) while a pure
+   container switch leaves the ladders untouched. */
 
 describe("HoloExportModal format toggle", () => {
   const settings = (): PlaybackExportSettings => ({
@@ -2123,7 +2247,7 @@ describe("HoloExportModal format toggle", () => {
     await nextTick();
   };
 
-  it("offers MP4 / WebM / GIF and writes the container + format defaults", async () => {
+  it("offers MP4 / WebM / GIF / WebP and writes the container + format defaults", async () => {
     const s = settings();
     mount(HoloExportModal, {
       props: {
@@ -2142,6 +2266,7 @@ describe("HoloExportModal format toggle", () => {
       i18nT("replay.export.formatVideo"),
       i18nT("replay.export.formatVideoWebm"),
       i18nT("replay.export.formatGif"),
+      i18nT("replay.export.formatWebp"),
     ]);
     // MP4 is the shipped default.
     expect(pills[0].getAttribute("aria-pressed")).toBe("true");
@@ -2160,6 +2285,25 @@ describe("HoloExportModal format toggle", () => {
     expect(s.format).toBe("gif");
     expect(s.size).toBe(720);
     expect(s.fps).toBe(10);
+    expect(formatPills()[2].getAttribute("aria-pressed")).toBe("true");
+
+    // WebP pill: a SIBLING image format — same defaults, no container.
+    await click(formatPills()[3]);
+    expect(s.format).toBe("webp");
+    expect(s.size).toBe(720);
+    expect(s.fps).toBe(10);
+    expect(formatPills()[3].getAttribute("aria-pressed")).toBe("true");
+    expect(formatPills()[2].getAttribute("aria-pressed")).toBe("false");
+
+    // A GIF → WebP flip (both image formats) still re-seeds to the image
+    // default: an on-ladder 2K image width must not survive the flip.
+    s.size = 1920;
+    s.fps = 15;
+    await click(formatPills()[2]);
+    await click(formatPills()[3]);
+    expect(s.format).toBe("webp");
+    expect(s.size).toBe(720);
+    expect(s.fps).toBe(10);
 
     // Back to video: the 2K @ 30 fps default returns, with MP4 selected.
     await click(formatPills()[0]);
@@ -2167,5 +2311,79 @@ describe("HoloExportModal format toggle", () => {
     expect(s.container).toBe("mp4");
     expect(s.size).toBe(1920);
     expect(s.fps).toBe(30);
+  });
+});
+
+/* ── Modal wiring: the image formats' platform-limit small print ────────
+   R3: a GIF / WebP take tells the user what the common chat platforms
+   accept BEFORE they export, so a 30 MB take is not a surprise. The line is
+   reference data, not a control: it renders under the take's stats for the
+   image formats only and never for a video take. */
+
+describe("HoloExportModal platform limits", () => {
+  const settings = (format: PlaybackExportFormat): PlaybackExportSettings => ({
+    format,
+    view: "2d",
+    container: "mp4",
+    from: 0,
+    to: 60,
+    fps: 30,
+    speed: 5,
+    size: 1920,
+    footer: true,
+    stats: true,
+  });
+
+  const mountWith = async (format: PlaybackExportFormat) => {
+    const wrapper = mount(HoloExportModal, {
+      props: {
+        modelValue: true,
+        settings: settings(format),
+        duration: 600,
+        current: 0,
+        exportDir: null,
+        onStart: () => {},
+      },
+      attachTo: document.body,
+    });
+    await nextTick();
+    return wrapper;
+  };
+
+  const limitsBlock = (): HTMLElement | null =>
+    document.body.querySelector<HTMLElement>(".holo-export__limits");
+
+  it("shows the verified reference limits for GIF and WebP", async () => {
+    for (const format of ["gif", "webp"] as const) {
+      const wrapper = await mountWith(format);
+      const block = limitsBlock();
+      expect(block, format).not.toBeNull();
+      const text = block!.textContent ?? "";
+      expect(text).toContain(i18nT("replay.export.platformLimits"));
+      expect(text).toContain(i18nT("replay.export.platformLimitsNote"));
+      // The verified figures (not the old Discord 10 MB figure).
+      expect(text).toContain("20 MB");
+      expect(text).toContain("2 GB");
+      expect(text).toContain("QQ");
+      expect(text).not.toContain("replay.export.");
+      wrapper.unmount();
+    }
+  });
+
+  it("hides the small print for the video formats", async () => {
+    for (const format of ["video"] as const) {
+      const wrapper = await mountWith(format);
+      expect(limitsBlock()).toBeNull();
+      wrapper.unmount();
+    }
+    // The container pill flip is still a video take: no limits either.
+    const wrapper = await mountWith("video");
+    const pills = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="group"]')[0].querySelectorAll("button"),
+    );
+    pills[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    expect(limitsBlock()).toBeNull();
+    wrapper.unmount();
   });
 });
