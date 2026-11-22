@@ -33,6 +33,11 @@
  * is hikari's HkPillToggleGroup (the standard grouped control — the old
  * hand-styled per-section HkButtons are gone) and its labels are
  * translated through the app i18n (`replay.perf.*`).
+ * The 资源 section is not a text line: it renders the resource-health
+ * check chain (features/holographic/resourceHealth.ts) as pass/fail rows
+ * with the fix hint, the per-ship missing list, and a 重新检查 button. The
+ * chain runs automatically once when a replay view opens with a session
+ * ship-model failure, so a silent empty scene explains itself here.
  * The card is a FIXED width (PERF_HUD_WIDTH, applied to the slot root) so
  * toggling sections can never reflow/resize the window; with every
  * section off the button row stays and the metric area keeps a reserved
@@ -81,10 +86,21 @@ import {
   type CSSProperties,
   type Ref,
 } from "vue";
-import { HkDebugFloat, HkIconButton, HkPillToggleGroup } from "@celestia-island/hikari";
+import {
+  HkButton,
+  HkDebugFloat,
+  HkIconButton,
+  HkPillToggleGroup,
+} from "@celestia-island/hikari";
 import { Pin, PinOff } from "@lucide/vue";
 
 import { t as i18nT } from "@/i18n";
+
+import {
+  runResourceHealthChecks,
+  useResourceHealth,
+  type ResourceCheckStatus,
+} from "./resourceHealth";
 
 /** Frame window for the percentile stats. */
 const WINDOW_MS = 2000;
@@ -135,11 +151,16 @@ export const PERF_HUD_SECTIONS = [
   { key: "timing", label: "timing" },
   { key: "draws", label: "draws" },
   { key: "gpu", label: "gpu" },
+  { key: "resources", label: "resources" },
 ] as const;
 
 /** Closed union of the section keys — the report maps are keyed by it
  *  so a lookup can never read `undefined` (noUncheckedIndexedAccess). */
 type PerfHudSectionKey = (typeof PERF_HUD_SECTIONS)[number]["key"];
+
+/** Sections whose body is a direct-DOM text line. The 资源 tab is a
+ *  component subtree (rows + recheck button), not a text line. */
+type PerfHudTextSectionKey = Exclude<PerfHudSectionKey, "resources">;
 
 /** Section keys in display/persistence order. */
 const SECTION_KEYS: readonly PerfHudSectionKey[] = PERF_HUD_SECTIONS.map(
@@ -237,12 +258,12 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
   // binding: the scene's own tick feeds report(), so the text must hit
   // the DOM synchronously (a scheduled re-render would land one
   // microtask late).
-  const statsText: Record<PerfHudSectionKey, Ref<string>> = {
+  const statsText: Record<PerfHudTextSectionKey, Ref<string>> = {
     timing: ref(""),
     draws: ref(""),
     gpu: ref(""),
   };
-  const statsEls: Partial<Record<PerfHudSectionKey, HTMLElement>> = {};
+  const statsEls: Partial<Record<PerfHudTextSectionKey, HTMLElement>> = {};
 
   const cardStyle: CSSProperties = {
     width: PERF_HUD_WIDTH,
@@ -292,6 +313,215 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
     overflowWrap: "anywhere",
   };
 
+  // ── 资源 tab: the resource-health check chain ─────────────────────────
+  // The report itself is module state in resourceHealth.ts (the auto-run
+  // and the replay view own it); this panel only renders the last report
+  // and offers the manual re-run. Details are paths/URLs and stay raw;
+  // labels, hints and the missing-model prefix go through the app i18n.
+  const health = useResourceHealth();
+  const statusGlyph: Record<ResourceCheckStatus, string> = {
+    pass: "✓",
+    fail: "✗",
+    fallback: "!",
+    info: "·",
+  };
+  const statusTone: Record<ResourceCheckStatus, string> = {
+    pass: "rgb(var(--color-success, 14 184 64))",
+    fail: "rgb(var(--color-error, 220 38 38))",
+    fallback: "rgb(var(--color-warning, 238 214 119))",
+    info: "inherit",
+  };
+  const resourceSectionStyle: CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "var(--space-3)",
+    whiteSpace: "normal",
+    minWidth: 0,
+  };
+  const resourceRowStyle: CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+    paddingBottom: "var(--space-2)",
+    borderBottom: "1px solid rgb(255 255 255 / 8%)",
+    minWidth: 0,
+  };
+  const resourceHeadStyle: CSSProperties = {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "var(--space-2)",
+    minWidth: 0,
+  };
+  const resourceDetailStyle: CSSProperties = {
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    opacity: 0.8,
+  };
+  const resourceHintStyle: CSSProperties = {
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    color: "rgb(var(--color-warning, 238 214 119))",
+  };
+
+  const renderResourceSection = () => {
+    const report = health.report.value;
+    const rows: ReturnType<typeof h>[] = [];
+    rows.push(
+      h(
+        "div",
+        {
+          class: "holo-perf-hud-resource-env",
+          "data-holo-resource-env": "",
+          style: resourceHeadStyle,
+        },
+        [
+          h("span", null, i18nT("replay.perf.environment")),
+          h(
+            "span",
+            {
+              "data-holo-resource-env-value": report?.environment ?? "unknown",
+              style: { opacity: 0.8 },
+            },
+            report
+              ? i18nT(`replay.perf.env.${report.environment}`)
+              : "—",
+          ),
+        ],
+      ),
+    );
+    if (!report) {
+      rows.push(
+        h(
+          "div",
+          {
+            class: "holo-perf-hud-resource-idle",
+            "data-holo-resource-idle": "",
+            style: resourceDetailStyle,
+          },
+          i18nT("replay.perf.idle"),
+        ),
+      );
+    } else {
+      for (const check of report.checks) {
+        const label = i18nT(`replay.perf.check.${check.id}`);
+        const children: ReturnType<typeof h>[] = [
+          h("div", { style: resourceHeadStyle }, [
+            h(
+              "span",
+              {
+                class: "holo-perf-hud-resource-mark",
+                "aria-hidden": "true",
+                style: {
+                  color: statusTone[check.status],
+                  fontWeight: 700,
+                },
+              },
+              statusGlyph[check.status],
+            ),
+            h("span", { class: "holo-perf-hud-resource-label" }, label),
+          ]),
+          h(
+            "div",
+            { class: "holo-perf-hud-resource-detail", style: resourceDetailStyle },
+            check.detail,
+          ),
+        ];
+        for (const line of check.extra ?? []) {
+          children.push(
+            h(
+              "div",
+              { class: "holo-perf-hud-resource-extra", style: resourceDetailStyle },
+              line,
+            ),
+          );
+        }
+        if (check.status !== "pass") {
+          children.push(
+            h(
+              "div",
+              {
+                class: "holo-perf-hud-resource-hint",
+                style: resourceHintStyle,
+              },
+              i18nT(`replay.perf.checkHint.${check.id}`),
+            ),
+          );
+        }
+        rows.push(
+          h(
+            "div",
+            {
+              key: check.id,
+              class: "holo-perf-hud-resource",
+              "data-holo-resource": check.id,
+              "data-status": check.status,
+              role: "group",
+              "aria-label": `${label}: ${i18nT(`replay.perf.status.${check.status}`)}`,
+              style: resourceRowStyle,
+            },
+            children,
+          ),
+        );
+      }
+      if (report.missingShips.length > 0) {
+        rows.push(
+          h(
+            "div",
+            {
+              class: "holo-perf-hud-resource-missing",
+              "data-holo-resource-missing": "",
+              style: {
+                ...resourceHintStyle,
+                color: "rgb(var(--color-error, 220 38 38))",
+              },
+            },
+            `${i18nT("replay.perf.missingModels")}: ${report.missingShips.join(", ")}`,
+          ),
+        );
+      }
+      if (report.fallbackShips.length > 0) {
+        rows.push(
+          h(
+            "div",
+            {
+              class: "holo-perf-hud-resource-fallback",
+              "data-holo-resource-fallback": "",
+              style: resourceHintStyle,
+            },
+            `${i18nT("replay.perf.fallbackModels")}: ${report.fallbackShips.join(", ")}`,
+          ),
+        );
+      }
+    }
+    rows.push(
+      h(
+        HkButton,
+        {
+          class: "holo-perf-hud-resource-recheck",
+          "data-holo-resource-recheck": "",
+          variant: "ghost",
+          size: "xs",
+          loading: health.running.value,
+          onClick: () => {
+            void runResourceHealthChecks().catch(() => {});
+          },
+        },
+        () => i18nT("replay.perf.recheck"),
+      ),
+    );
+    return h(
+      "div",
+      {
+        key: "resources",
+        class: "holo-perf-hud holo-perf-hud-resources",
+        "data-holo-perf": "resources",
+        "data-holo-resources": "",
+        style: resourceSectionStyle,
+      },
+      rows,
+    );
+  };
+
   const PerfHudFloat = defineComponent({
     name: "PerfHudFloat",
     setup() {
@@ -326,7 +556,7 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
           draws: statsText.draws.value,
           gpu: statsText.gpu.value,
         };
-        for (const key of Object.keys(statsEls) as PerfHudSectionKey[]) {
+        for (const key of Object.keys(statsEls) as PerfHudTextSectionKey[]) {
           const el = statsEls[key];
           if (el) el.textContent = text[key];
         }
@@ -479,8 +709,11 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
                     style: { ...statsStyle, ...dimStyle(frozen.value) },
                   },
                   PERF_HUD_SECTIONS.filter(({ key }) => isVisible(key)).map(
-                    ({ key }) =>
-                      h("div", {
+                    ({ key }) => {
+                      // The 资源 tab is a component subtree (rows + the
+                      // recheck button), not a direct-DOM text line.
+                      if (key === "resources") return renderResourceSection();
+                      return h("div", {
                         key,
                         class: "holo-perf-hud",
                         "data-holo-perf": key,
@@ -493,7 +726,8 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
                           // changes, which could be a report window away.
                           if (el) (el as HTMLElement).textContent = statsText[key].value;
                         },
-                      }),
+                      });
+                    },
                   ),
                 ),
               ],

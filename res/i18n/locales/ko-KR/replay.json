@@ -637,7 +637,39 @@
     "draws": "드로우",
     "gpu": "GPU",
     "sections": "섹션",
-    "pin": "고정(클릭 통과)"
+    "pin": "고정(클릭 통과)",
+    "resources": "리소스",
+    "recheck": "다시 검사",
+    "environment": "환경",
+    "env": {
+      "tauri": "Tauri 셸",
+      "browser": "Tauri 셸 없음(브라우저 개발 모드)"
+    },
+    "idle": "아직 검사하지 않음 — 리플레이 화면을 열거나 다시 검사를 누르세요",
+    "missingModels": "누락 모델",
+    "fallbackModels": "내장 폴백",
+    "status": {
+      "pass": "통과",
+      "fail": "실패",
+      "fallback": "폴백",
+      "info": "정보"
+    },
+    "check": {
+      "cacheRoot": "캐시 루트",
+      "assetProtocol": "에셋 프로토콜",
+      "pack": "리소스 팩 내용",
+      "replayMap": "이 리플레이 맵",
+      "shipModels": "함선 모델",
+      "sessionFailures": "이번 세션 로드 실패"
+    },
+    "checkHint": {
+      "cacheRoot": "\"설정 → 리소스\"에서 리소스 팩을 다운로드하거나 복구하세요. 데스크톱 캐시 루트는 %LOCALAPPDATA%\\WoWSP 여야 합니다.",
+      "assetProtocol": "tauri.conf.json 의 assetProtocol.scope 가 캐시 루트($LOCALDATA/WoWSP/**)를 포함하는지 확인하거나 리소스 팩을 다시 설치하세요.",
+      "pack": "리소스 팩을 다시 다운로드하세요(설정 → 리소스).",
+      "replayMap": "팩에 이 맵의 minimap/GLB 가 없습니다 — 리소스 팩을 다시 다운로드하세요.",
+      "shipModels": "누락 모델은 리소스 팩 재다운로드로 보완됩니다. 내장 폴백은 정상적인 저하입니다.",
+      "sessionFailures": "콘솔의 [modelLoader] 로그를 확인하고 팩 복구 후 리플레이 화면을 다시 여세요."
+    }
   },
   "chatLog": "채팅 기록",
   "chat": {

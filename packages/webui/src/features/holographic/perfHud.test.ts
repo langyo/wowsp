@@ -33,6 +33,11 @@ import {
   toggleHiddenSection,
   type PerfHud,
 } from "./perfHud";
+import {
+  resetResourceHealthSession,
+  runResourceHealthChecks,
+  setReplayResourceContext,
+} from "./resourceHealth";
 
 const STORAGE_KEY = "hk-debug-float:holo-perf";
 
@@ -94,6 +99,7 @@ function persistedRecord(): Record<string, unknown> {
 afterEach(() => {
   // dispose is idempotent — a test may have disposed early.
   for (const hud of mounted.splice(0)) hud.dispose();
+  resetResourceHealthSession();
   vi.restoreAllMocks();
   // The float persists open/drag/hidden-section state under its
   // persistKey — clear this suite's record so tests stay hermetic.
@@ -121,11 +127,12 @@ function fakeRenderer(): THREE.WebGLRenderer {
 }
 
 describe("section state (pure)", () => {
-  it("keeps the three sections in display order", () => {
+  it("keeps the four sections in display order", () => {
     expect(PERF_HUD_SECTIONS.map((section) => section.key)).toEqual([
       "timing",
       "draws",
       "gpu",
+      "resources",
     ]);
   });
 
@@ -182,7 +189,7 @@ describe("createPerfHud", () => {
     const keys = [...document.querySelectorAll(".holo-perf-hud")].map(
       (el) => (el as HTMLElement).dataset.holoPerf,
     );
-    expect(keys).toEqual(["timing", "draws", "gpu"]);
+    expect(keys).toEqual(["timing", "draws", "gpu", "resources"]);
     // Each line is its own pre-formatted node — no fused 3-line blob —
     // and it WRAPS instead of clipping: the pads keep the columns steady,
     // while an overlong GPU adapter string breaks onto the next line.
@@ -297,7 +304,7 @@ describe("the in-card section switch", () => {
   it("labels every pill through the app i18n and shows the active state", () => {
     mountHud();
     const buttons = pills();
-    expect(buttons.length).toBe(3);
+    expect(buttons.length).toBe(4);
     PERF_HUD_SECTIONS.forEach(({ key }, index) => {
       const label = i18nT(`replay.perf.${key}`);
       const button = buttons[index]!;
@@ -322,7 +329,7 @@ describe("the in-card section switch", () => {
     // A modest body area is reserved even before any line renders.
     expect(stats.style.minHeight).not.toBe("");
 
-    for (const key of ["timing", "draws", "gpu"]) await clickToggle(key);
+    for (const { key } of PERF_HUD_SECTIONS) await clickToggle(key);
     expect(document.querySelectorAll(".holo-perf-hud").length).toBe(0);
     // The row survives and the width is untouched — no reflow/collapse.
     expect(document.querySelector("[data-holo-perf-toggles]")).not.toBeNull();
@@ -469,6 +476,102 @@ describe("hover yield (HkDebugFloat)", () => {
     expect(floatRoot()).not.toBeNull();
     hud.dispose();
     expect(document.querySelector(".hk-debug-float")).toBeNull();
+  });
+});
+
+describe("the 资源 tab", () => {
+  it("renders one row per check, the fix hints, the missing list and a recheck button", async () => {
+    setReplayResourceContext({
+      mapId: "15_NE_north",
+      replayPath: "hud-test",
+      ships: [{ shipId: 1, name: "Alpha" }],
+    });
+    await runResourceHealthChecks({
+      isTauri: false,
+      cacheRoot: null,
+      convertFileSrc: null,
+      minimapJsonUrl: () => "/models/maps/minimaps.json",
+      mapModelUrl: () => null,
+      shipCandidates: () => ["/models/ships/alpha.glb"],
+      fetch: async (url) => {
+        if (url === "/models/maps/minimaps.json") {
+          return new Response(JSON.stringify({ "15_NE_north": {} }), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response("gone", { status: 404 });
+      },
+    });
+
+    mountHud();
+    const tab = metric("resources");
+    expect(tab).not.toBeNull();
+    const rows = [
+      ...tab!.querySelectorAll<HTMLElement>("[data-holo-resource]"),
+    ];
+    expect(rows.map((row) => row.dataset.holoResource)).toEqual([
+      "cacheRoot",
+      "assetProtocol",
+      "pack",
+      "replayMap",
+      "shipModels",
+      "sessionFailures",
+    ]);
+    // Labels go through the app i18n; details stay raw paths.
+    const cacheRow = rows.find(
+      (row) => row.dataset.holoResource === "cacheRoot",
+    )!;
+    expect(cacheRow.textContent).toContain(i18nT("replay.perf.check.cacheRoot"));
+    expect(cacheRow.textContent).toContain("no Tauri shell");
+    // A non-pass row carries the translated fix hint.
+    expect(tab!.textContent).toContain(
+      i18nT("replay.perf.checkHint.assetProtocol"),
+    );
+    // The environment state is reported explicitly.
+    expect(
+      tab!.querySelector("[data-holo-resource-env]")!.textContent,
+    ).toContain(i18nT("replay.perf.env.browser"));
+    // The per-ship missing list (check 5) carries the ship name.
+    expect(tab!.textContent).toContain(
+      `${i18nT("replay.perf.missingModels")}: alpha(Alpha)`,
+    );
+    // The manual re-run lives in the tab.
+    expect(tab!.querySelector("[data-holo-resource-recheck]")).not.toBeNull();
+  });
+
+  it("says so when no report has been produced yet", () => {
+    resetResourceHealthSession();
+    mountHud();
+    const tab = metric("resources")!;
+    expect(tab.textContent).toContain(i18nT("replay.perf.idle"));
+    expect(tab.querySelector("[data-holo-resource-recheck]")).not.toBeNull();
+  });
+
+  it("updates live when a run lands after the HUD is mounted", async () => {
+    resetResourceHealthSession();
+    mountHud();
+    expect(
+      metric("resources")!.querySelector("[data-holo-resource]"),
+    ).toBeNull();
+
+    setReplayResourceContext({
+      mapId: "15_NE_north",
+      replayPath: "live",
+      ships: [],
+    });
+    await runResourceHealthChecks({
+      isTauri: false,
+      cacheRoot: null,
+      convertFileSrc: null,
+      minimapJsonUrl: () => "/models/maps/minimaps.json",
+      mapModelUrl: () => null,
+      shipCandidates: () => [],
+      fetch: async () => new Response("gone", { status: 404 }),
+    });
+    await nextTick();
+    expect(
+      metric("resources")!.querySelector("[data-holo-resource='cacheRoot']"),
+    ).not.toBeNull();
   });
 });
 
