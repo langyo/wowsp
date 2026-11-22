@@ -26,7 +26,13 @@
  *           renderVideoOffline; the container pill picks the ladder (MP4 →
  *           H.264 with MP4-native VP9/AV1 fallbacks, WebM → VP9/VP8 — see
  *           playbackCodecLadder);
- *   gif   — gifenc, per-frame quantized palette, centisecond delays.
+ *   gif   — gifenc, per-frame quantized palette, centisecond delays;
+ *   webp  — the canvas's own lossy WebP encoder (VP8, one frame at a time),
+ *           muxed into an animated WebP by the dependency-free webpMux.ts.
+ *
+ * The two IMAGE formats also publish a live size estimate while they encode
+ * (every frame's compressed bytes are known, so the final size extrapolates
+ * from the frames done so far — see playbackExportSizeEstimate).
  *
  * The caller (HolographicMap) owns the playhead: every frame first seeks
  * the shared map internals to the frame's battle time (markers, caps,
@@ -35,6 +41,8 @@
  * panel/header data — so every band shows this frame's state.
  */
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
+
+import { muxAnimatedWebp, readWebpFrame, type AnimatedWebpFrame } from "./webpMux";
 
 import {
   FOOT_H,
@@ -325,8 +333,17 @@ export function recorderPanelFits(available = recorderPanelHeight()): boolean {
   return recorderPanelBands().stackH <= available;
 }
 
-/** Export formats offered by the modal. */
-export type PlaybackExportFormat = "video" | "gif";
+/** Export formats offered by the modal: the two VIDEO containers plus the
+ *  two IMAGE formats (GIF and animated WebP). */
+export type PlaybackExportFormat = "video" | "gif" | "webp";
+
+/** Is this format one of the animated IMAGE formats? They share the size
+ *  ladder, the 720p default, the frame budget, the auto-shrinking range and
+ *  the live size estimate — everything that distinguishes the image
+ *  pipeline from the video one. */
+export function isImageFormat(format: PlaybackExportFormat): boolean {
+  return format === "gif" || format === "webp";
+}
 
 /** Video container choice for the modal: MP4 (H.264 — the pair every player,
  *  ffmpeg and hardware decoder carries) or WebM (VP9 — clearly better
@@ -399,30 +416,36 @@ export interface PlaybackExportSettings {
   stats: boolean;
 }
 
-/** Frame-rate ladders per format: GIF stays coarse (size explodes fast). */
+/** Frame-rate ladders per format: the image formats stay coarse — every
+ *  frame is a full painting and the file grows fast. WebP shares GIF's
+ *  ladder (it is the same image pipeline, only the container differs). */
 export const PLAYBACK_EXPORT_FPS: Record<PlaybackExportFormat, number[]> = {
   video: [30, 60],
   gif: [10, 15],
+  webp: [10, 15],
 };
 /** Default frame rate per format — the rung a fresh take (and a format
  *  flip) starts on, kept explicit beside the size defaults. */
 export const PLAYBACK_EXPORT_DEFAULT_FPS: Record<PlaybackExportFormat, number> = {
   video: 30,
   gif: 10,
+  webp: 10,
 };
 /** GIF frame budget: every frame's compressed bitmap is held in memory
  *  until finish(), so an unbounded take (a 1× full match) would balloon past
  *  a gigabyte — and the 720p+ size ladder makes each frame far heavier than
  *  the old 480 rung did. The modal refuses to start past this and says how to
- *  shrink the take. */
+ *  shrink the take. Animated WebP holds every frame's bitstream for the same
+ *  reason and shares this budget. */
 export const GIF_MAX_FRAMES = 1500;
 /** Video frame budget: mediabunny's BufferTarget also holds the whole
  *  mux in memory, so a 1× 60 fps full match (72k frames) is not a
  *  take anyone should be able to start by accident. */
 export const VIDEO_MAX_FRAMES = 30000;
-/** The budget for a format (the modal's start guard + warning line). */
+/** The budget for a format (the modal's start guard + warning line). The
+ *  two image formats share the tighter in-memory budget. */
 export function exportFrameBudget(format: PlaybackExportFormat): number {
-  return format === "gif" ? GIF_MAX_FRAMES : VIDEO_MAX_FRAMES;
+  return isImageFormat(format) ? GIF_MAX_FRAMES : VIDEO_MAX_FRAMES;
 }
 
 /** Longest battle span the format's frame budget allows, in battle seconds
@@ -436,9 +459,9 @@ export function exportMaxSpan(
   return Math.max(step, (exportFrameBudget(format) - 1) * step);
 }
 
-/** Clamp a window's end so the take fits the budget. GIF auto-shrinks (the
- *  range ribbon短ens itself, 2026-11-20 request); video keeps the explicit
- *  refusal instead, so its end is left untouched here. */
+/** Clamp a window's end so the take fits the budget. The image formats
+ *  auto-shrink (the range ribbon短ens itself, 2026-11-20 request); video
+ *  keeps the explicit refusal instead, so its end is left untouched here. */
 export function clampRangeToBudget(
   from: number,
   to: number,
@@ -446,9 +469,58 @@ export function clampRangeToBudget(
   fps: number,
   speed: number,
 ): number {
-  if (format !== "gif") return to;
+  if (!isImageFormat(format)) return to;
   return Math.min(to, from + exportMaxSpan(format, fps, speed));
 }
+
+/* ── Live size estimate (the image formats' progress-card readout) ──────
+ * The pre-export modal can show NOTHING honest about the file size: no frame
+ * has been encoded yet, so its stats line stays frames + duration. The
+ * encode loop, however, knows every frame's compressed byte count the moment
+ * the frame is written — so the final size extrapolates from the frames done
+ * so far (average frame bytes × the take's frame count) and is published on
+ * the progress card instead. */
+
+/** The share of the take that must be encoded before the estimate is
+ *  published — an early outlier frame must not set the readout (~5%). */
+export const EXPORT_ESTIMATE_MIN_SHARE = 0.05;
+
+/** One live size reading. */
+export interface PlaybackExportSizeEstimate {
+  /** Frames encoded when the reading was taken. */
+  frames: number;
+  /** Bytes those frames occupy in the output so far. */
+  bytes: number;
+  /** Extrapolated final size in bytes (avg frame bytes × total frames). */
+  estimateBytes: number;
+}
+
+/** Extrapolate the final file size from the frames already encoded. Null
+ *  until at least EXPORT_ESTIMATE_MIN_SHARE of the take is done (and always
+ *  for an empty take), so the card never shows a number built from one
+ *  frame. */
+export function playbackExportSizeEstimate(
+  frames: number,
+  bytes: number,
+  total: number,
+): PlaybackExportSizeEstimate | null {
+  if (!Number.isFinite(frames) || !Number.isFinite(bytes) || !Number.isFinite(total)) {
+    return null;
+  }
+  if (frames <= 0 || total <= 0 || bytes <= 0) return null;
+  const gate = Math.max(1, Math.ceil(total * EXPORT_ESTIMATE_MIN_SHARE));
+  if (frames < gate) return null;
+  return { frames, bytes, estimateBytes: (bytes / frames) * total };
+}
+
+/** Format a byte count for the card readout in MB (one decimal below 10 —
+ *  the unit the chat platforms' limits are stated in). */
+export function formatExportSize(bytes: number): string {
+  const mb = Math.max(0, bytes) / (1024 * 1024);
+  if (mb < 0.1) return "< 0.1 MB";
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}
+
 /** Width ladders per format. Video runs 1080 → 4K (the HUD composition
  *  needs width for its side columns, and 4K is the archive rung); GIF runs
  *  720p → 2K because the old 480/640 rungs were simply illegible — GIF files
@@ -456,6 +528,9 @@ export function clampRangeToBudget(
 export const PLAYBACK_EXPORT_SIZES: Record<PlaybackExportFormat, number[]> = {
   video: [1080, 1440, 1920, 2160],
   gif: [720, 1080, 1920],
+  // The image pipeline's own ladder: WebP is the smaller-footprint GIF, not
+  // a video rung, so it shares GIF's 720p floor / 2K ceiling.
+  webp: [720, 1080, 1920],
 };
 /** Default width per format: 2K for video (the map text is the whole point —
  *  至少 2K is the user's floor) and 720p for GIF. Kept SEPARATE from the
@@ -464,14 +539,16 @@ export const PLAYBACK_EXPORT_SIZES: Record<PlaybackExportFormat, number[]> = {
 export const PLAYBACK_EXPORT_DEFAULT_SIZE: Record<PlaybackExportFormat, number> = {
   video: 1920,
   gif: 720,
+  webp: 720,
 };
-/** Battle-time compression ladder (shared by both formats). */
+/** Battle-time compression ladder (shared by every format). */
 export const PLAYBACK_EXPORT_SPEEDS = [1, 2, 5, 10, 20] as const;
 /** Default compression per format — a full match at 1× is minutes long,
  *  which is not what a share clip is for (the reference runs ≈19×). */
 export const PLAYBACK_EXPORT_DEFAULT_SPEED: Record<PlaybackExportFormat, number> = {
   video: 5,
   gif: 10,
+  webp: 10,
 };
 
 /** Clamp fps/size/speed onto the ladders (format switches in the modal
@@ -550,6 +627,13 @@ export function frameTimesAtSpeed(
  *  viewers, so the floor keeps slow GIFs honest). */
 export function gifDelayMs(fps: number): number {
   return Math.max(20, Math.round(100 / Math.max(1, fps)) * 10);
+}
+
+/** Animated-WebP frame duration in ms: the container stores plain
+ *  milliseconds (no GIF centisecond grid), so the floor only keeps a
+ *  pathological frame rate renderable. */
+export function webpDelayMs(fps: number): number {
+  return Math.max(1, Math.round(1000 / Math.max(1, fps)));
 }
 
 export interface PlaybackExportLayout {
@@ -2334,6 +2418,12 @@ export interface PlaybackExportRequest {
    *  False = no stat tracks anywhere in the clip. */
   showStats: boolean;
   onProgress?: (done: number, total: number) => void;
+  /** Live final-size estimate, IMAGE formats only (GIF / WebP): fired from
+   *  the encode loop once ~5% of the frames are written, then on every
+   *  following frame. The caller renders it as the progress card's small
+   *  reading; the video path never calls it (its mux size is unknown until
+   *  the encoder flushes). */
+  onEstimate?: (estimate: PlaybackExportSizeEstimate) => void;
   /** Coarse phase for the progress card: frames vs the encoder/muxer
    *  flush (the latter reports no percentage — the card goes
    *  indeterminate instead of sitting frozen at 100%). The renderer only
@@ -2347,8 +2437,8 @@ export interface PlaybackExportResult {
   blob: Blob;
   /** Container of the produced file: the video path yields whatever
    *  playbackCodecLadder's winning rung muxes (mp4 for the compatibility
-   *  pill, webm for the compression pill), the image path gif. */
-  ext: "mp4" | "webm" | "gif";
+   *  pill, webm for the compression pill), the image path gif or webp. */
+  ext: "mp4" | "webm" | "gif" | "webp";
   cancelled: boolean;
 }
 
@@ -2489,9 +2579,11 @@ export function composePlaybackFrame(
   }
 }
 
-/** Run the export. Resolves null only when the VIDEO path finds no
- *  WebCodecs codec (the caller surfaces "unsupported"); a cancelled run
- *  resolves with cancelled: true and whatever was encoded so far. */
+/** Run the export. Resolves null when the take cannot be encoded at all:
+ *  the VIDEO path found no WebCodecs codec, or the WEBP path's canvas does
+ *  not encode WebP (Firefox returns PNG — the shipped app is WebView2).
+ *  A cancelled run resolves with cancelled: true and whatever was encoded
+ *  so far. */
 export async function renderPlaybackExport(
   req: PlaybackExportRequest,
 ): Promise<PlaybackExportResult | null> {
@@ -2524,46 +2616,113 @@ export async function renderPlaybackExport(
     return { blob: result.blob, ext: result.ext, cancelled: result.cancelled };
   }
 
-  // GIF: gifenc with a per-frame local palette (the map's colors drift
-  // with weather/smoke; one global palette would band late-game frames).
+  // ── Image pipeline: GIF (gifenc) and animated WebP (canvas + webpMux) ──
+  // Both formats compose the SAME frame, hold every encoded frame until the
+  // container is written and publish the live size estimate, so one loop
+  // serves both; only the per-frame encoder and the final mux differ.
   // The compose canvas belongs to THIS branch — the video path composes
   // straight into the muxer's own canvas.
+  const isWebp = req.format === "webp";
   const canvas = document.createElement("canvas");
   canvas.width = layout.width;
   canvas.height = layout.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  const gif = GIFEncoder();
-  const delay = gifDelayMs(req.fps);
+  // GIF: gifenc with a per-frame local palette (the map's colors drift with
+  // weather/smoke; one global palette would band late-game frames). WebP:
+  // one browser-encoded lossy frame per compose step, then a container mux.
+  const gif = isWebp ? null : GIFEncoder();
+  const webpFrames: AnimatedWebpFrame[] = [];
+  const delay = isWebp ? webpDelayMs(req.fps) : gifDelayMs(req.fps);
+  /** Bytes the finished container holds so far (the estimate's numerator). */
+  let written = 0;
   let encoded = 0;
   for (let i = 0; i < req.times.length; i++) {
     if (req.cancelToken?.cancelled === true) break;
     const t = req.times[i];
     composePlaybackFrame(ctx, layout, req, t);
-    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const palette = quantize(data, 256, { format: "rgb565" });
-    const index = applyPalette(data, palette, "rgb565");
-    gif.writeFrame(index, canvas.width, canvas.height, { palette, delay });
+    if (isWebp) {
+      const blob = await canvasToWebp(canvas);
+      // Firefox's canvas silently falls back to PNG for image/webp; muxing
+      // that would produce an unreadable file, so report "unsupported".
+      if (!blob || blob.type !== "image/webp") return null;
+      const data = new Uint8Array(await blob.arrayBuffer());
+      // Validate the FIRST frame with webpMux's own reader: a browser whose
+      // encoder answers with a malformed frame then surfaces on frame one,
+      // not after a whole take (later frames are validated by the muxer at
+      // finish — validating every frame here would copy each bitstream).
+      if (webpFrames.length === 0) readWebpFrame(data);
+      webpFrames.push({ data, durationMs: delay });
+      written += data.byteLength;
+    } else {
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const palette = quantize(data, 256, { format: "rgb565" });
+      const index = applyPalette(data, palette, "rgb565");
+      gif!.writeFrame(index, canvas.width, canvas.height, { palette, delay });
+      // gifenc writes into a growing buffer: bytesView() is the container's
+      // live length (no copy), which is the estimate's numerator.
+      written = gif!.bytesView().length;
+    }
     encoded++;
     req.onProgress?.(i + 1, req.times.length);
+    const estimate = playbackExportSizeEstimate(encoded, written, req.times.length);
+    if (estimate) req.onEstimate?.(estimate);
     // Sync quantize bursts starve the UI thread — yield every few frames
     // so the progress surface keeps painting and cancel stays responsive.
     if (i % 3 === 2) await new Promise((r) => setTimeout(r, 0));
   }
   if (encoded === 0) {
-    return { blob: new Blob([], { type: "image/gif" }), ext: "gif", cancelled: true };
+    return {
+      blob: new Blob([], { type: isWebp ? "image/webp" : "image/gif" }),
+      ext: isWebp ? "webp" : "gif",
+      cancelled: true,
+    };
   }
   req.onPhase?.("finalize");
-  gif.finish();
+  if (isWebp) {
+    // The animation is a RIFF container (VP8X + ANIM + one ANMF per frame);
+    // each frame's own 12-byte RIFF preamble is replaced by its ANMF
+    // header, which is the whisker by which the estimate above runs high.
+    const bytes = muxAnimatedWebp({
+      width: canvas.width,
+      height: canvas.height,
+      frames: webpFrames,
+    });
+    return {
+      // The muxer allocates a plain ArrayBuffer-backed view; the cast only
+      // narrows TS's generic Uint8Array<ArrayBufferLike> to BlobPart.
+      blob: new Blob([bytes.buffer as ArrayBuffer], { type: "image/webp" }),
+      ext: "webp",
+      cancelled: req.cancelToken?.cancelled === true,
+    };
+  }
+  gif!.finish();
   // Copy into a plain ArrayBuffer-backed view — TS's BlobPart wants
   // ArrayBuffer (not ArrayBufferLike) and gifenc returns the shared
   // backing view.
-  const written = gif.bytes();
-  const bytes = new Uint8Array(written.length);
-  bytes.set(written);
+  const outBytes = gif!.bytes();
+  const bytes = new Uint8Array(outBytes.length);
+  bytes.set(outBytes);
   return {
     blob: new Blob([bytes.buffer], { type: "image/gif" }),
     ext: "gif",
     cancelled: req.cancelToken?.cancelled === true,
   };
+}
+
+/** Frame quality for the browser's WebP encoder: 0.9 keeps the HUD's text
+ *  edges crisp while still beating GIF's palette on size. The image formats
+ *  have no quality pill (only the video ladder does), so this is the one
+ *  constant the WebP take uses. */
+export const WEBP_FRAME_QUALITY = 0.9;
+
+/** Encode the compose canvas as ONE lossy WebP frame. HTMLCanvasElement's
+ *  toBlob is the callback form (convertToBlob is OffscreenCanvas-only);
+ *  Chromium/WebView2 — the shipped Tauri shell — answers with image/webp,
+ *  while Firefox silently falls back to PNG (the caller then reports
+ *  "unsupported" rather than muxing a non-WebP frame). */
+function canvasToWebp(canvas: HTMLCanvasElement): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), "image/webp", WEBP_FRAME_QUALITY);
+  });
 }

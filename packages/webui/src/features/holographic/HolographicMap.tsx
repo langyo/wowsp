@@ -126,11 +126,14 @@ import {
   type ExportGodCameraPose,
   foldPlaybackRecorderStats,
   foldRecorderSources,
+  formatExportSize,
   frameTimesAtSpeed,
+  isImageFormat,
   normalizeExportRange,
   renderPlaybackExport,
   type PlaybackExportPhase,
   type PlaybackExportSettings,
+  type PlaybackExportSizeEstimate,
   type PlaybackIconVariant,
   type PlaybackRecorderRibbon,
   type PlaybackRecorderTimeline,
@@ -3933,6 +3936,19 @@ const RECORDED_DOLLY_MIN = -40;
     const exportProgress = ref({ done: 0, total: 0 });
     const exportCancel = { cancelled: false };
     const exportCard = ref<ToastCardBaseInstance | null>(null);
+    /** The running take's live size estimate (IMAGE formats only): the
+     *  encode loop publishes it after ~5% of the frames, and the card reads
+     *  it as a small line under the phase/percentage. Null until then (and
+     *  for every video take — mediabunny reports no muxed size). */
+    const exportEstimate = ref<PlaybackExportSizeEstimate | null>(null);
+    /** The finished take's exact size, set the moment the muxer returns;
+     *  it replaces the live estimate in the card's completion readout. */
+    const exportFinalBytes = ref<number | null>(null);
+    /** Whether the RUNNING take is an image format — snapshotted at job
+     *  start so the readout never depends on later settings edits (the
+     *  modal is closed while a take runs, but the card's held fold-out
+     *  outlives the job). */
+    const exportImageTake = ref(false);
     /** 3D hull-drain progress for the models phase (loaded/total scene
      *  markers + how many loads are still in flight); null outside it. */
     const exportModels = ref<ShipModelProgress | null>(null);
@@ -3945,10 +3961,29 @@ const RECORDED_DOLLY_MIN = -40;
     const exportPhase = ref<ExportCardPhase>("feed");
     /** The leave-fold snapshot: when the take ends, the card folds out
      *  showing the last live values instead of snapping to empty. */
-    const exportCardHeld = ref<{ meta: string; progress: number | null }>({
+    const exportCardHeld = ref<{ meta: string; progress: number | null; note: string | null }>({
       meta: "",
       progress: 0,
+      note: null,
     });
+    /** The size line's text: the FINAL size once the muxer returned, else
+     *  the live extrapolation — and only for an image take (the video
+     *  formats have no honest number until the encoder flushes, and no
+     *  final-size readout either). */
+    function exportCardNote(): string | null {
+      if (!exportImageTake.value) return null;
+      if (exportFinalBytes.value != null) {
+        return i18nT("replay.export.estimateFinal", {
+          size: formatExportSize(exportFinalBytes.value),
+        });
+      }
+      if (exportEstimate.value) {
+        return i18nT("replay.export.estimateLive", {
+          size: formatExportSize(exportEstimate.value.estimateBytes),
+        });
+      }
+      return null;
+    }
     function exportCardLive(): { meta: string; progress: number | null } {
       return exportCardReadout(exportPhase.value, exportProgress.value, exportModels.value);
     }
@@ -3959,7 +3994,7 @@ const RECORDED_DOLLY_MIN = -40;
           exportCard.value?.show();
           return;
         }
-        exportCardHeld.value = exportCardLive();
+        exportCardHeld.value = { ...exportCardLive(), note: exportCardNote() };
         exportCard.value?.dismiss();
       },
       // Sync: the fold snapshot must sample the still-live counts before
@@ -4301,6 +4336,11 @@ const RECORDED_DOLLY_MIN = -40;
       const resumeAt = current.value;
       playing.value = false;
       exportProgress.value = { done: 0, total: times.length };
+      // The size readout belongs to this take: clear the previous one and
+      // remember whether an image format is running (its estimate only).
+      exportEstimate.value = null;
+      exportFinalBytes.value = null;
+      exportImageTake.value = isImageFormat(s.format);
       // The feed below (roster batch, medal compositions, the ledger and the
       // decoded art) is real work with no percentage. Say so on the card
       // instead of leaving it at 0% · 0/N for the whole assembly — the
@@ -4778,13 +4818,35 @@ const RECORDED_DOLLY_MIN = -40;
             });
           },
           onProgress: markExportProgress,
+          // Image formats only: the encode loop's live final-size estimate
+          // (the card's small line under the phase/percentage). The card
+          // renders tenths of an MB, so a reading that would print the same
+          // string is skipped — the loop can fire every frame.
+          onEstimate: (estimate) => {
+            const prev = exportEstimate.value;
+            if (
+              prev &&
+              formatExportSize(prev.estimateBytes) === formatExportSize(estimate.estimateBytes)
+            ) {
+              return;
+            }
+            exportEstimate.value = estimate;
+          },
           onPhase: (phase) => {
             exportPhase.value = phase;
           },
           cancelToken: exportCancel,
         });
         if (!result) {
-          toast.error(i18nT("replay.export.unsupported"));
+          // The webp path fails only when the canvas cannot encode WebP
+          // (Firefox returns PNG; the shipped shell is WebView2/Chromium).
+          toast.error(
+            i18nT(
+              s.format === "webp"
+                ? "replay.export.webpUnsupported"
+                : "replay.export.unsupported",
+            ),
+          );
         } else if (result.cancelled && result.blob.size === 0) {
           // Cancelled before anything encoded — stay quiet.
         } else if (result.blob.size > 0) {
@@ -4798,6 +4860,10 @@ const RECORDED_DOLLY_MIN = -40;
             .map((n) => String(n).padStart(2, "0"))
             .join("");
           const name = `wowsp-replay-${tag}-${clock}-${stamp}.${result.ext}`;
+          // The take is muxed: replace the live estimate with the exact
+          // file size for the card's completion readout (the save phase and
+          // the held fold-out keep showing it).
+          exportFinalBytes.value = result.blob.size;
           // The file write is its own phase: a multi-hundred-MB clip
           // takes a while to land, and the card must say so.
           exportPhase.value = "save";
@@ -4810,7 +4876,7 @@ const RECORDED_DOLLY_MIN = -40;
             saved = await saveExportBlob(
               result.blob,
               name,
-              result.ext === "gif" ? "Image" : "Video",
+              result.ext === "gif" || result.ext === "webp" ? "Image" : "Video",
               result.ext,
             );
           }
@@ -5442,6 +5508,18 @@ const RECORDED_DOLLY_MIN = -40;
           >
             {{
               icon: () => <Clapperboard size={14} />,
+              // The image take's size reading, under the phase/percentage
+              // row: the live extrapolation while frames encode, then the
+              // muxed file's exact size through the save phase and the
+              // held fold-out (nothing for a video take).
+              body: () => {
+                const note = exporting.value
+                  ? exportCardNote()
+                  : exportCardHeld.value.note;
+                return note ? (
+                  <p class="playback-export-toast__size">{note}</p>
+                ) : null;
+              },
               progress: () => {
                 const pct = exporting.value
                   ? exportCardLive().progress

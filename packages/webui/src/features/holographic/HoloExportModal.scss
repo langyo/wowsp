@@ -88,6 +88,30 @@
     color: rgb(var(--color-muted));
   }
 
+  /* The IMAGE formats' platform-limit small print: the reference limits
+   * under the take's frames/duration stats, then the "check the platform"
+   * caveat. The dialog's smallest face — optional context, not a control,
+   * so it never competes with the range ribbon or the start button. */
+  &__limits {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin: -0.25rem 0 0;
+    text-align: center;
+    font-size: var(--text-2xs);
+    line-height: 1.45;
+    color: rgb(var(--color-muted));
+  }
+
+  &__limits-line,
+  &__limits-note {
+    margin: 0;
+  }
+
+  &__limits-note {
+    opacity: 0.8;
+  }
+
   /* The frame-budget refusal line — warning ink, same rhythm as the
    * estimate above it. */
   &__warn {
@@ -102,4 +126,18 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
+}
+
+/* Export progress card — the image formats' size reading (the live estimate
+ * while frames encode, then the muxed file's exact size). The card is the
+ * modal's sibling on the same export surface (HolographicMap renders both),
+ * so its one quiet line lives in this sheet rather than a new file: it sits
+ * under the card's phase/percentage row as context for the platform limits
+ * above, never as a second headline. */
+.playback-export-toast__size {
+  margin: 0;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
 }
