@@ -640,6 +640,7 @@
     "pin": "Épingler (laisser passer les clics)",
     "resources": "Ressources",
     "recheck": "Revérifier",
+    "fixHint": "Correction",
     "environment": "Environnement",
     "env": {
       "tauri": "Coque Tauri",

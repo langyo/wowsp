@@ -640,6 +640,7 @@
     "pin": "Pin (click-through)",
     "resources": "Resources",
     "recheck": "Recheck",
+    "fixHint": "Fix",
     "environment": "Environment",
     "env": {
       "tauri": "Tauri shell",

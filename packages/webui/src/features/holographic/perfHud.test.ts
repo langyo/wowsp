@@ -480,7 +480,7 @@ describe("hover yield (HkDebugFloat)", () => {
 });
 
 describe("the 资源 tab", () => {
-  it("renders one row per check, the fix hints, the missing list and a recheck button", async () => {
+  it("renders structured rows: status chip, label, mono detail, labelled fix hint", async () => {
     setReplayResourceContext({
       mapId: "15_NE_north",
       replayPath: "hud-test",
@@ -517,24 +517,67 @@ describe("the 资源 tab", () => {
       "shipModels",
       "sessionFailures",
     ]);
+    // Every row is a STRUCTURED layout: a translated status badge (never an
+    // emoji glyph), the check label, the raw detail as its own mono code
+    // block, and — for non-pass rows — the fix hint as a labelled row.
+    for (const row of rows) {
+      const status = row.dataset.status as "pass" | "fail" | "fallback" | "info";
+      // No glyph span survives the standardization.
+      expect(row.querySelector("[data-holo-resource-mark]")).toBeNull();
+      const chip = row.querySelector<HTMLElement>(
+        "[data-holo-resource-status]",
+      );
+      expect(chip).not.toBeNull();
+      expect(chip!.dataset.holoResourceStatus).toBe(status);
+      expect(chip!.textContent).toBe(i18nT(`replay.perf.status.${status}`));
+      // No emoji/check glyphs in the badge row or anywhere in the panel.
+      expect(chip!.textContent).not.toMatch(/[✓✗!·]/);
+      expect(
+        row.querySelector(".holo-perf-hud-resource-label")!.textContent,
+      ).toBe(i18nT(`replay.perf.check.${row.dataset.holoResource}`));
+      const detail = row.querySelector<HTMLElement>(
+        "[data-holo-resource-detail]",
+      );
+      expect(detail).not.toBeNull();
+      expect(detail!.textContent!.length).toBeGreaterThan(0);
+      // The detail is a code-styled block, not free inline text.
+      expect(detail!.getAttribute("style") ?? "").toContain("monospace");
+      const hint = row.querySelector<HTMLElement>("[data-holo-resource-hint]");
+      if (status === "pass") {
+        expect(hint).toBeNull();
+      } else {
+        expect(hint).not.toBeNull();
+        expect(hint!.textContent).toContain(i18nT("replay.perf.fixHint"));
+        expect(hint!.textContent).toContain(
+          i18nT(`replay.perf.checkHint.${row.dataset.holoResource}`),
+        );
+      }
+    }
     // Labels go through the app i18n; details stay raw paths.
     const cacheRow = rows.find(
       (row) => row.dataset.holoResource === "cacheRoot",
     )!;
     expect(cacheRow.textContent).toContain(i18nT("replay.perf.check.cacheRoot"));
     expect(cacheRow.textContent).toContain("no Tauri shell");
-    // A non-pass row carries the translated fix hint.
-    expect(tab!.textContent).toContain(
-      i18nT("replay.perf.checkHint.assetProtocol"),
-    );
-    // The environment state is reported explicitly.
+    // The environment state is reported explicitly, as a neutral badge.
     expect(
       tab!.querySelector("[data-holo-resource-env]")!.textContent,
     ).toContain(i18nT("replay.perf.env.browser"));
-    // The per-ship missing list (check 5) carries the ship name.
-    expect(tab!.textContent).toContain(
-      `${i18nT("replay.perf.missingModels")}: alpha(Alpha)`,
+    // The per-ship missing list keeps its row layout (chip + mono list)
+    // and carries the ship name without any glyph prefix.
+    const missing = tab!.querySelector<HTMLElement>(
+      "[data-holo-resource-missing]",
     );
+    expect(missing).not.toBeNull();
+    expect(missing!.textContent).toContain(i18nT("replay.perf.missingModels"));
+    expect(missing!.textContent).toContain("alpha(Alpha)");
+    expect(
+      missing!
+        .querySelector("[data-holo-resource-missing-list]")!
+        .getAttribute("style") ?? "",
+    ).toContain("monospace");
+    // No emoji/check glyphs anywhere in the panel.
+    expect(tab!.textContent).not.toMatch(/[✓✗·]/);
     // The manual re-run lives in the tab.
     expect(tab!.querySelector("[data-holo-resource-recheck]")).not.toBeNull();
   });
@@ -544,6 +587,8 @@ describe("the 资源 tab", () => {
     mountHud();
     const tab = metric("resources")!;
     expect(tab.textContent).toContain(i18nT("replay.perf.idle"));
+    // No report → no structured check rows (and thus no status chips).
+    expect(tab.querySelector("[data-holo-resource-status]")).toBeNull();
     expect(tab.querySelector("[data-holo-resource-recheck]")).not.toBeNull();
   });
 
@@ -569,9 +614,14 @@ describe("the 资源 tab", () => {
       fetch: async () => new Response("gone", { status: 404 }),
     });
     await nextTick();
+    const row = metric("resources")!.querySelector<HTMLElement>(
+      "[data-holo-resource='cacheRoot']",
+    );
+    expect(row).not.toBeNull();
+    // The late-landing report renders the same structured chip layout.
     expect(
-      metric("resources")!.querySelector("[data-holo-resource='cacheRoot']"),
-    ).not.toBeNull();
+      row!.querySelector("[data-holo-resource-status]")!.textContent,
+    ).toBe(i18nT("replay.perf.status.info"));
   });
 });
 
