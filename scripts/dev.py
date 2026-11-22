@@ -16,6 +16,15 @@ orchestrator only needs to:
   not watch itself (Cargo.toml, tauri.conf.json, justfile, .env). This is the
   same `notify` crate mechanism malkuth's own CLI uses internally.
 
+The child-process lifecycle and the port guard are NOT implemented here: they
+come from `celestia_devtools.devguard`, the shared module promoted from this
+repository's #2095 fix (tracked-child tree kill on every exit path, the
+poll-loop wait that lets a console SIGINT dispatch, and the UTF-8-safe pid
+describer behind the port guard). What stays in this file is WoWSP POLICY —
+which port this repo owns, the sentence that explains what a foreign listener
+would do to this window, the logger/console shaping, and the `--mock`/`--watch`
+gates.
+
 Usage:
     python scripts/dev.py                # cargo tauri dev (native desktop, full hot reload)
     python scripts/dev.py webui          # browser-only Vite
@@ -25,15 +34,21 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import atexit
 import os
-import signal
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
-from typing import NamedTuple
+
+try:
+    from celestia_devtools import devguard
+except ImportError as exc:  # pragma: no cover - environment bootstrap
+    raise SystemExit(
+        "scripts/dev.py needs celestia-devtools (the shared devguard module): run "
+        "`just ensure`, or `python -m pip install -U "
+        "git+https://github.com/celestia-island/celestia-devtools.git`, then retry."
+    ) from exc
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts" / "utils"))
@@ -47,14 +62,6 @@ MOCK_PORT = int(os.environ.get("WOWSP_MOCK_PORT", "8787"))
 # pinned in lockstep with packages/app/tauri/tauri.conf.json's devUrl and
 # packages/webui/vite.config.ts (src/devPort.contract.test.ts enforces it).
 VITE_PORT = 5199
-
-# Windows PowerShell writes its *redirected* stdout in the console codepage
-# (GBK/cp936 on the maintainer's host), so CJK paths came back mojibake
-# (`D:/Դ????/...`) even though the pipe is read as utf-8. Forcing the console
-# output encoding inside the session makes the producer match the consumer;
-# every powershell invocation that reads process metadata must prefix its
-# -Command with this (see _describe_pid_command).
-_PS_UTF8_PREFIX = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
 
 # Files whose changes tauri-cli does NOT watch but should trigger a full dev
 # restart. Source files (Rust + webui) are handled by tauri-cli's own watcher
@@ -77,183 +84,36 @@ WATCH_CONFIG_GLOBS = [
 
 # ── child-process lifecycle ───────────────────────────────────────────
 #
-# Kill-chain design: `taskkill /PID <pid> /T /F` per spawned child on Windows
-# (POSIX: process-group SIGTERM, then SIGKILL). taskkill is chosen over a
-# ctypes Job Object because it is dependency-free, is already this repo's
-# Windows primitive (`_kill_lingering_wowsp` and the old `_terminate`), and it
-# covers the actual failure mode: every child is spawned through shell=True,
-# so Popen.pid is a cmd.exe wrapper and ONLY a tree kill reaches
-# pnpm/Vite/cargo. A Job Object would additionally survive dev.py itself being
-# force-killed, but needs ctypes plumbing and one handle per child for a dev
-# script whose own orderly exit is the routine path.
+# The mechanism — tracked-children registry, per-platform tree kill, atexit +
+# SIGINT/SIGBREAK/SIGTERM/SIGHUP handlers, poll-loop wait — lives in
+# celestia_devtools.devguard, shared with every sibling repository since the
+# #2095 promotion. This file keeps only the policy: what gets spawned, and
+# which exit paths tear it down.
 #
-# Regression: the maintainer's every-other-`just dev` failed with "something
-# is already listening on :5199". Run N spawned Vite, then left through a path
-# that did not kill it (Ctrl+C in the `webui` branch, a subprocess failure, an
-# exception before the cleanup join); the orphan held :5199 and run N+1's guard
-# refused. Every exit path now runs the tree kill, so the routine Ctrl+C no
-# longer orphans Vite. Known gaps, documented rather than papered over:
-# (a) no Python runs on a hard kill of dev.py itself (taskkill /F) or on a
-#     console-close (CTRL_CLOSE_EVENT) that pre-empts the handler;
-# (b) Ctrl+C reaches the whole console group at once, so if cmd.exe dies before
-#     our taskkill runs, /T has no tree root left to walk and a grandchild that
-#     ignored Ctrl+C is out of reach (taskkill on the recorded pid would be
-#     unsafe: PID reuse).
-# A ctypes Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE would close both
-# (the kernel kills the whole job when its last handle closes, even when dev.py
-# is hard-killed) and is the intended next step if a residual orphan is ever
-# observed; taskkill was chosen now to keep this dev script free of ctypes job
-# plumbing. Whatever the route, a child whose kill cannot be confirmed stays
-# tracked so a later atexit/signal pass can retry it.
-_LIVE_CHILDREN: dict[int, subprocess.Popen] = {}
-_LIVE_LOCK = threading.RLock()
-_CLEANUP_IN_PROGRESS = False
-_EXIT_HOOKS_INSTALLED = False
-
-
-def _track_child(proc: subprocess.Popen) -> None:
-    """Remember a spawned child so the exit hooks can tree-kill it."""
-    with _LIVE_LOCK:
-        for pid in [pid for pid, p in _LIVE_CHILDREN.items() if p.poll() is not None]:
-            _LIVE_CHILDREN.pop(pid, None)
-        _LIVE_CHILDREN[proc.pid] = proc
-
-
-def _untrack_child(proc: subprocess.Popen) -> None:
-    with _LIVE_LOCK:
-        _LIVE_CHILDREN.pop(proc.pid, None)
-
-
-def _kill_command(pid: str | int) -> str:
-    """Copy-pasteable one-liner that stops `pid` (with its tree on Windows)."""
-    if os.name == "nt":
-        return f"taskkill /PID {pid} /T /F"
-    return f"kill -TERM {pid}"
-
-
-def _proc_group(proc: subprocess.Popen) -> int | None:
-    """The child's process group when it leads its own session, else None.
-
-    `_run` starts POSIX children in a new session, so killpg reaches the whole
-    tree; a child that shares dev.py's own group must never be group-killed
-    (that would kill dev.py itself)."""
-    if os.name == "nt":
-        return None
-    try:
-        pgid = os.getpgid(proc.pid)
-        return pgid if pgid != os.getpgid(0) else None
-    except OSError:
-        return None
-
-
-def _terminate(proc: subprocess.Popen) -> bool:
-    """Tree-terminate one child: SIGTERM first, then SIGKILL on POSIX;
-    `taskkill /T /F` on Windows (no signal-based graceful stop reaches the
-    grandchildren of a shell-spawned process there). Idempotent, never raises.
-
-    Returns True once the child is confirmed gone and untracked; a kill that
-    cannot be confirmed leaves it tracked so the next atexit/signal cleanup
-    pass retries instead of silently dropping the tree."""
-    if proc.poll() is not None:
-        _untrack_child(proc)
-        return True
-    try:
-        if os.name == "nt":
-            # taskkill the tree so pnpm/Vite/cargo children don't linger.
-            subprocess.run(
-                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                capture_output=True,
-                timeout=10,
-            )
-        else:
-            pgid = _proc_group(proc)
-            if pgid is not None:
-                os.killpg(pgid, signal.SIGTERM)
-            else:
-                proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                pass
-            if pgid is not None:
-                # A descendant can outlive the group leader, so a clean leader
-                # exit must not end the cleanup; SIGKILL the whole group (a
-                # gone group raises ESRCH, which is fine).
-                try:
-                    os.killpg(pgid, signal.SIGKILL)
-                except OSError:
-                    pass
-            elif proc.poll() is None:
-                proc.kill()
-    except Exception:
-        try:
-            proc.kill()
-        except Exception:
-            pass
-    finally:
-        try:
-            proc.wait(timeout=1)  # reap, don't leave a zombie on POSIX
-        except Exception:
-            pass
-    if proc.poll() is not None:
-        _untrack_child(proc)
-        return True
-    return False
-
-
-def _cleanup_children() -> None:
-    """Tree-kill every live child. Runs on atexit, on SIGINT/SIGBREAK/SIGTERM/
-    SIGHUP, and from the explicit shutdown paths. Never raises; reentrant-safe.
-
-    Untracking happens inside `_terminate` only on a confirmed kill, so a
-    failed or aborted pass (second Ctrl+C, taskkill timeout) leaves the
-    survivors in the registry for the next pass."""
-    global _CLEANUP_IN_PROGRESS
-    with _LIVE_LOCK:
-        if _CLEANUP_IN_PROGRESS:
-            return
-        _CLEANUP_IN_PROGRESS = True
-        procs = list(_LIVE_CHILDREN.values())
-    try:
-        for proc in procs:
-            _terminate(proc)
-    finally:
-        with _LIVE_LOCK:
-            _CLEANUP_IN_PROGRESS = False
-
-
-def _on_signal(signum: int, _frame) -> None:
-    """Kill the spawned trees BEFORE unwinding, so Ctrl+C cannot orphan Vite."""
-    try:
-        name = signal.Signals(signum).name
-    except ValueError:
-        name = str(signum)
-    try:
-        _log.warn(f"received {name} — stopping child process trees", module="dev")
-    except Exception:
-        pass  # logging must never be able to skip the cleanup below
-    _cleanup_children()
-    if signum in (getattr(signal, "SIGINT", None), getattr(signal, "SIGBREAK", None)):
-        raise KeyboardInterrupt
-    raise SystemExit(128 + signum)
-
-
-def _install_exit_hooks() -> None:
-    """Register the atexit + signal cleanup exactly once."""
-    global _EXIT_HOOKS_INSTALLED
-    if _EXIT_HOOKS_INSTALLED:
-        return
-    _EXIT_HOOKS_INSTALLED = True
-    atexit.register(_cleanup_children)
-    for name in ("SIGINT", "SIGBREAK", "SIGTERM", "SIGHUP"):
-        sig = getattr(signal, name, None)
-        if sig is None:
-            continue
-        try:
-            signal.signal(sig, _on_signal)
-        except (OSError, ValueError, RuntimeError):
-            # e.g. called from a non-main thread; atexit still covers us.
-            pass
+# Why the shared shape is the right one for THIS script:
+# * every child is spawned through shell=True (pnpm/cargo shims do not resolve
+#   otherwise), so Popen.pid is a cmd.exe wrapper and ONLY a tree kill reaches
+#   the pnpm/Vite/cargo grandchildren;
+# * devguard.spawn_kwargs() gives POSIX children their own session, so the
+#   group kill reaches the tree without ever signalling dev.py itself;
+# * a child whose kill cannot be confirmed stays tracked, so a later
+#   atexit/signal pass retries it instead of dropping the tree;
+# * known gaps, documented rather than papered over: no Python runs on a hard
+#   kill of dev.py itself (taskkill /F) or on a console-close
+#   (CTRL_CLOSE_EVENT) that pre-empts the handler, and a Ctrl+C that reaches
+#   the whole console group at once can leave `taskkill /T` with no tree root
+#   to walk (a grandchild that ignored Ctrl+C is then out of reach, and a bare
+#   pid kill would be unsafe: PID reuse). A ctypes Job Object with
+#   JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE would close both; devguard keeps
+#   taskkill because it is dependency-free and a dev script's orderly exit is
+#   the routine path.
+#
+# Regression this keeps fixed: the maintainer's every-other-`just dev` failed
+# with "something is already listening on :5199". Run N spawned Vite, then
+# left through a path that did not kill it (Ctrl+C in the webui branch, a
+# subprocess failure, an exception before the cleanup join); the orphan held
+# :5199 and run N+1's guard refused. Every exit path now tree-kills, so the
+# routine Ctrl+C no longer orphans Vite.
 
 
 def _run(cmd: list[str], cwd: Path = ROOT, env: dict | None = None) -> subprocess.Popen:
@@ -266,9 +126,6 @@ def _run(cmd: list[str], cwd: Path = ROOT, env: dict | None = None) -> subproces
     #
     # On POSIX the shell child leads its own session so the cleanup hooks can
     # signal the whole tree with killpg instead of leaking node/cargo.
-    popen_kwargs: dict = {}
-    if os.name != "nt":
-        popen_kwargs["start_new_session"] = True
     proc: subprocess.Popen | None = None
     try:
         proc = subprocess.Popen(
@@ -276,31 +133,17 @@ def _run(cmd: list[str], cwd: Path = ROOT, env: dict | None = None) -> subproces
             cwd=str(cwd),
             env={**os.environ, **(env or {})},
             shell=True,
-            **popen_kwargs,
+            **devguard.spawn_kwargs(),
         )
-        _track_child(proc)
+        devguard.track(proc.pid, proc)
         return proc
     except BaseException:
         # A signal handler can raise between Popen returning and the registry
         # insert; the handler does not know this child yet, so kill it here
         # before the exception unwinds.
         if proc is not None:
-            _terminate(proc)
+            devguard.tree_kill(proc.pid)
         raise
-
-
-def _wait_proc(proc: subprocess.Popen, interval: float = 0.25) -> int | None:
-    """Wait for a child in short polls, never in one blocking `proc.wait()`.
-
-    This is what makes the Ctrl-C guarantee real: on Windows `Popen.wait()`
-    parks the main thread in WaitForSingleObject(INFINITE), which the console
-    SIGINT handler cannot interrupt, so the handler would only run after the
-    child exits — a pnpm/Vite tree that ignores Ctrl+C would then survive the
-    script and keep holding :5199. Polling lets the pending handler run within
-    one interval and tree-kill the still-live child."""
-    while proc.poll() is None:
-        time.sleep(interval)
-    return proc.returncode
 
 
 def _wait_port(port: int, timeout: float = 20.0) -> bool:
@@ -334,116 +177,30 @@ def start_mock(procs: list[subprocess.Popen]) -> None:
         _log.warn(f"mock backend did not bind :{MOCK_PORT} in time", module="mock")
 
 
-class _PortOwner(NamedTuple):
-    """Who holds a port: the netstat pid (None when netstat failed) plus a
-    best-effort identity suffix (", <command line>"), empty when unknown."""
-
-    pid: str | None
-    detail: str
+# ── port guard (WoWSP policy; mechanism in celestia_devtools.devguard) ──
 
 
-def _busy_port_message(port: int, owner: _PortOwner) -> str:
-    """The guard's headline, ending in a COPY-PASTEABLE kill one-liner with the
-    resolved pid (no placeholder the user has to fill in)."""
-    msg = f"something is already listening on :{port}"
-    if owner.pid:
-        msg += f" (pid {owner.pid}{owner.detail})"
-        msg += f". Stop that process tree with `{_kill_command(owner.pid)}`"
-    else:
-        msg += f". Find it with `netstat -ano | findstr :{port}`"
-    return msg
+def _describe_pid(pid: str) -> str:
+    """Best-effort identity suffix for a listener pid (", <command line>").
+
+    The shared describer does the platform work (UTF-8-pinned PowerShell read,
+    tasklist fallback, POSIX ps); the ", " prefix is this guard's policy so the
+    sentence below reads as one clause."""
+    identity = devguard.describe_pid(pid)
+    return f", {identity}" if identity else ""
 
 
-def _port_occupied_by(port: int) -> _PortOwner | None:
+def _port_occupied_by(port: int) -> devguard.PortOwner | None:
     """Return who listens on `port` (pid + best-effort identity), or None when
     the port is free. Guards against the nasty failure where ANOTHER project's
     dev server holds the port: `_wait_port` would then see it as 'Vite ready'
     and Tauri would load that foreign app in our window."""
-    import socket
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        if s.connect_ex(("127.0.0.1", port)) != 0:
-            return None  # connect failed → free
-    pid = None
-    try:
-        out = subprocess.run(
-            ["netstat", "-ano"], capture_output=True, text=True, errors="replace", timeout=10
-        ).stdout
-        for line in out.splitlines():
-            parts = line.split()
-            # Match ANY local address on the port (0.0.0.0 / 127.0.0.1 / [::]):
-            # Vite typically binds 0.0.0.0, so an exact 127.0.0.1 comparison
-            # would detect the conflict but lose the pid from the message.
-            if len(parts) >= 5 and parts[1].endswith(f":{port}") and parts[3] == "LISTENING":
-                # The pid is interpolated into a PowerShell -Command string
-                # and printed as a kill one-liner; refuse anything non-numeric.
-                if parts[4].isdigit():
-                    pid = parts[4]
-                    break
-    except (OSError, subprocess.SubprocessError):
-        pass
-    if not pid:
-        return _PortOwner(None, "")
-    return _PortOwner(pid, _describe_pid(pid))
-
-
-def _describe_pid_command(pid: str) -> list[str]:
-    """PowerShell argv that reads a pid's command line as UTF-8 text.
-
-    The _PS_UTF8_PREFIX is mandatory: powershell.exe writes its redirected
-    stdout in the console codepage (GBK/cp936 on the maintainer's host), so a
-    CJK repo path (this repo lives under 源代码/工程项目/个人站点) came back as
-    `D:/Դ????/...` even though the pipe is read with encoding="utf-8". Forcing
-    [Console]::OutputEncoding makes the producer match the consumer."""
-    return [
-        "powershell",
-        "-NoProfile",
-        "-Command",
-        _PS_UTF8_PREFIX + f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine",
-    ]
-
-
-def _describe_pid(pid: str) -> str:
-    """Best-effort one-line identity for a listener pid (process name / command
-    line), so the port guard can name the FOREIGN project instead of a bare
-    port number — the 2026-10-30 incident had a neighboring site's Vite server
-    on Vite's shared default :5173 and the old message gave the user nothing to
-    act on. Never raises; an unknown pid yields an empty string."""
-    try:
-        if os.name == "nt":
-            out = subprocess.run(
-                _describe_pid_command(pid),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=6,
-            ).stdout.strip()
-            if not out:
-                lines = subprocess.run(
-                    ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=5,
-                ).stdout.strip().splitlines()
-                fallback = lines[0] if lines else ""
-                # tasklist answers a dead pid with "INFO: No tasks are running
-                # which match the specified criteria." — not an identity.
-                out = "" if fallback.startswith("INFO:") else fallback
-            return f", {out[:160]}" if out else ""
-        out = subprocess.run(
-            ["ps", "-p", pid, "-o", "command="],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=5,
-        ).stdout.strip()
-        return f", {out[:160]}" if out else ""
-    except (OSError, subprocess.SubprocessError, IndexError):
-        return ""
+    if not devguard.port_in_use(port):
+        return None  # connect refused → free
+    pid = devguard.port_listener_pid(port)
+    if pid is None:
+        return devguard.PortOwner(None, "")
+    return devguard.PortOwner(pid, _describe_pid(pid))
 
 
 def _console_safe(text: str) -> str:
@@ -453,14 +210,10 @@ def _console_safe(text: str) -> str:
     console is commonly GBK and the logger prints through it with no encoding
     fallback, so an unencodable character would turn the guard itself into a
     UnicodeEncodeError traceback (the 2026-10-30 fix initially did exactly
-    that). Encode/decode against the stream's own encoding, replacing what it
-    cannot represent."""
-    stream = getattr(getattr(_log, "_default", None), "stream", None) or sys.stdout
-    encoding = getattr(stream, "encoding", None) or "utf-8"
-    try:
-        return text.encode(encoding, errors="replace").decode(encoding)
-    except (LookupError, UnicodeError):
-        return text.encode("ascii", errors="replace").decode("ascii")
+    that). The shared helper does the encode/decode; this wrapper supplies THIS
+    repo's log stream, which is why it stays here."""
+    stream = getattr(getattr(_log, "_default", None), "stream", None)
+    return devguard.console_safe(text, stream)
 
 
 def _require_vite_port_free() -> None:
@@ -474,19 +227,18 @@ def _require_vite_port_free() -> None:
     path (all `just dev` modes including the default native one), naming the
     offending pid/command before Tauri can open; Vite itself is also pinned with
     host 127.0.0.1 + strictPort so a fallback cannot happen even when the script
-    is bypassed (`cargo tauri dev` directly)."""
-    owner = _port_occupied_by(VITE_PORT)
-    if owner is None:
-        return
-    _log.error(
-        _console_safe(
-            _busy_port_message(VITE_PORT, owner) + ". This is NOT WoWSP's dev server — "
-            "Tauri would load that foreign app into the WoWSP window. Stop it, or move that "
-            "project to its own dev port, then rerun `just dev`."
-        ),
-        module="vite",
+    is bypassed (cargo tauri dev directly).
+
+    The refusal text and the SystemExit come from devguard.require_port_free;
+    the words below are WoWSP's policy."""
+    devguard.require_port_free(
+        VITE_PORT,
+        "This is NOT WoWSP's dev server — Tauri would load that foreign app into the "
+        "WoWSP window. Stop it, or move that project to its own dev port, then rerun "
+        "`just dev`.",
+        owner_lookup=_port_occupied_by,
+        report=lambda message: _log.error(_console_safe(message), module="vite"),
     )
-    raise SystemExit(1)
 
 
 def start_vite(procs: list[subprocess.Popen], extra_env: dict | None = None) -> None:
@@ -568,7 +320,7 @@ def run_with_watcher(cmd: list[str], env: dict | None = None) -> int:
                 if on_change.wait(0.5):
                     on_change.clear()
                     _log.warn("config changed → restarting dev subprocess", module="watch")
-                    _terminate(proc)
+                    devguard.tree_kill(proc.pid)
                     break
             if proc.poll() is None:
                 # We broke out via config change; loop to respawn.
@@ -583,7 +335,7 @@ def run_with_watcher(cmd: list[str], env: dict | None = None) -> int:
         # Ctrl-C during the wait must not leave cargo/Vite behind.
         stop_event.set()
         if proc is not None:
-            _terminate(proc)
+            devguard.tree_kill(proc.pid)
     return 0
 
 
@@ -594,13 +346,13 @@ def run_mock(args: argparse.Namespace) -> int:
         start_vite(procs, extra_env={"WOWSP_MOCK_URL": f"http://localhost:{MOCK_PORT}"})
         _log.info("WoWSP dev (mock) running — Ctrl-C to stop.", module="ready")
         for p in procs:
-            _wait_proc(p)
+            devguard.wait_poll(p)
     except KeyboardInterrupt:
         _log.info("shutting down...", module="dev")
     finally:
         # A finally-return here would swallow the port guard's SystemExit(1).
         for p in procs:
-            _terminate(p)
+            devguard.tree_kill(p.pid)
     return 0
 
 
@@ -657,7 +409,7 @@ def run_native(args: argparse.Namespace) -> int:
             # dev terminal — 2026-11-07 report). `just dev mock` omits the
             # flag and serves the FastAPI backend as before.
             start_vite(procs, extra_env={"WOWSP_NO_BACKEND": "1"})
-            _wait_proc(procs[0])
+            devguard.wait_poll(procs[0])
             return 0
         cmd = ["cargo", "tauri", "dev"]
         env = None
@@ -669,7 +421,7 @@ def run_native(args: argparse.Namespace) -> int:
             return run_with_watcher(cmd, env=env)
         # Default: plain cargo tauri dev (tauri-cli's own watcher handles hot reload).
         procs.append(_run(cmd, env=env))
-        _wait_proc(procs[-1])
+        devguard.wait_poll(procs[-1])
         return procs[-1].returncode or 0
     except KeyboardInterrupt:
         _log.info("shutting down...", module="dev")
@@ -677,15 +429,24 @@ def run_native(args: argparse.Namespace) -> int:
     finally:
         # Every exit path (Ctrl-C in the webui branch above, a subprocess
         # failure, any exception between spawn and join) tree-kills the
-        # children; atexit/signal hooks cover the paths that skip this frame.
+        # children; the shared atexit/signal hooks cover the paths that skip
+        # this frame.
         for proc in procs:
-            _terminate(proc)
+            devguard.tree_kill(proc.pid)
+
+
+def _notify_signal(message: str) -> None:
+    """Route devguard's teardown line through this script's logger."""
+    try:
+        _log.warn(message, module="dev")
+    except Exception:
+        pass  # logging must never be able to skip the cleanup itself
 
 
 def main() -> int:
     # Cleanup must exist BEFORE the first spawn: Ctrl-C (or any exception)
     # between spawn and an explicit join used to orphan Vite on :5199.
-    _install_exit_hooks()
+    devguard.install_exit_hooks(_notify_signal)
     parser = argparse.ArgumentParser(description="WoWSP dev orchestrator")
     parser.add_argument("mode", nargs="?", default=None, help="(positional) 'webui' for browser-only")
     parser.add_argument("--mock", action="store_true", help="start the FastAPI mock backend")
