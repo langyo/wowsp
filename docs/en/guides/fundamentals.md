@@ -19,6 +19,14 @@ view.
 | `<game>/profile/clientrunner.log` | Both | Realm detection (`Selected realm:` line) |
 | Windows registry + Steam manifest | Both | Game install path |
 | Wargaming Public / Vortex API | Both (optional) | Per-player stats (winrate, clan, etc.) |
+| WoWSP cache-mesh node | Both (optional) | The same stats, served from a cache (official or self-hosted) |
+
+Stats lookups walk a ladder: the configured cache servers first (settings ▸
+connection ▸ cache servers; the official node plus any community nodes the
+auto-discovery verified), then the unchanged proxy → direct chain. A cached
+answer carries `x-wowsp-cache: hit|miss|peer-hit` provenance; the upstream
+health registry still records only direct-path outcomes, so a cache hit
+never flatters an upstream's health row.
 
 ## Model conversion
 

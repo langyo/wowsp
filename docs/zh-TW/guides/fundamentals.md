@@ -19,6 +19,9 @@ view.
 | `<game>/profile/clientrunner.log` | Both | Realm detection (`Selected realm:` line) |
 | Windows registry + Steam manifest | Both | Game install path |
 | Wargaming Public / Vortex API | Both (optional) | Per-player stats (winrate, clan, etc.) |
+| WoWSP 快取網格節點 | 兩者（可選） | 同樣的戰績，由快取（官方或自架節點）代答 |
+
+戰績查詢走一道階梯：先走已設定的快取伺服器（設定 ▸ 連線 ▸ 快取伺服器；官方節點 + 自動探索驗證過的社群節點），之後才是固定的代理 → 直連鏈。快取答案帶有 `x-wowsp-cache: hit|miss|peer-hit` 來源標記；上游健康登錄表仍只記錄直連路徑的結果，因此快取命中絕不會美化上游的健康列。
 
 ## Model conversion
 

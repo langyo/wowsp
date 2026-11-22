@@ -63,6 +63,34 @@ N 字节  json_block  = 对局描述（阵容、地图、对局类型）
 | 构建 | Cargo + pnpm workspace、`just` 任务、Python 工具 |
 | 文档 | lagrange 多语言站点 |
 
+## 服务端
+
+WoWSP 不只是桌面应用：`wowsp.langyo.xyz`（官方节点）与任意自部署节点
+构成一个不大的服务端，三种形态共享同一份策略核心
+（`packages/pairing-relay/crates/relay-core`）：
+
+| 形态 | 包 | 能力 |
+|---|---|---|
+| Cloudflare Worker（官方 + 向导自部署） | `crates/relay-worker`（Rust→wasm） | 全部 |
+| 原生二进制（VPS / 局域网 / Docker） | `crates/relay-server`（axum + SQLite） | 全部 |
+| Vercel 边缘适配器 | `packages/relay-vercel`（TypeScript） | 查询 + peers + 块 |
+
+每个节点上跑着两套命名空间：
+
+- **战斗推送**（`/gateway/*`，WebSocket）—— 手机的实时战绩通道，见
+  `designs/gateway-push.md`。
+- **缓存网格**（`/api/lookup`、`/api/blocks`、`/api/peers`）——
+  公开战绩上游（vortex/WG/军团，13 主机白名单）的缓存代理，加上
+  内容寻址的块存储（CIDv1，带 `/ipfs/<cid>` 网关别名）与广播式
+  peer 注册表：一个玩家的慢冷查询变成所有人的缓存命中。见
+  `designs/cache-mesh.md`（客户端上报路线图见
+  `designs/cache-mesh-trust.md`）。
+
+客户端侧，每个战绩请求先走已配置的缓存服务器（设置 ▸ 连接 ▸
+缓存服务器——默认官方节点，加上自动发现验证过的社区节点），
+之后才回落到不变的 代理 → 直连 链。自建节点是一等公民路径：
+`guides/self-host-gateway.md`。
+
 ## 出处
 
 录像解析、游戏检测、`tempArenaInfo.json` 轮询原理借鉴自 [ApeRadar（海猴雷达）](https://github.com/zylalx1/ApeRadar)。前端壳、构建设施、授权模式借鉴自 [shittim-chest](https://github.com/celestia-island/shittim-chest)。

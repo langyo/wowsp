@@ -88,6 +88,36 @@ timeline the holographic map scrubs.
 | Build | Cargo + pnpm workspace, `just` recipes, Python tooling |
 | Docs | lagrange multilingual site |
 
+## The server side
+
+WoWSP is not only the desktop app: `wowsp.langyo.xyz` (the official node)
+and any self-hosted node form a small server side with three shapes built
+from one policy core (`packages/pairing-relay/crates/relay-core`):
+
+| Shape | Package | Capabilities |
+|---|---|---|
+| Cloudflare Worker (official + wizard self-hosts) | `crates/relay-worker` (Rust→wasm) | all |
+| Native binary (VPS / LAN / Docker) | `crates/relay-server` (axum + SQLite) | all |
+| Vercel edge adapter | `packages/relay-vercel` (TypeScript) | lookup + peers + blocks |
+
+Two namespaces ride on every node:
+
+- **Battle push** (`/gateway/*`, WebSockets) — the phone's live-stats
+  channel; see `designs/gateway-push.md`.
+- **The cache mesh** (`/api/lookup`, `/api/blocks`, `/api/peers`) — a
+  caching proxy for the public stats upstreams (vortex/WG/clans, the
+  13-host allowlist) plus a content-addressed block store (CIDv1, with an
+  `/ipfs/<cid>` gateway alias) and a broadcast peer registry, so one
+  player's slow cold lookup becomes everyone's cache hit. See
+  `designs/cache-mesh.md` (and `designs/cache-mesh-trust.md` for the
+  client-reported-results roadmap).
+
+On the client, every stats request first walks the configured cache
+servers (settings ▸ connection ▸ cache servers — the official node by
+default, plus community nodes from the mesh's peer list) and falls back
+to the unchanged proxy → direct chain. Running your own node is a
+first-class path: `guides/self-host-gateway.md`.
+
 ## Provenance
 
 The replay-parsing, game-detection, and `tempArenaInfo.json` polling principles
