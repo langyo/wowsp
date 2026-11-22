@@ -15,31 +15,22 @@
  */
 import { api } from "@/api";
 
-/** The shipped ribbon art, keyed by FILE STEM. A Vite `?url` import keeps
- *  every URL in the module graph: the file is emitted (content-hashed) into
- *  the build and the URL is resolved against the app's base — so a ribbon
- *  face cannot 404 because the publicDir copy is missing, stale, or the app
- *  is served from a sub-path. That silent 404 is exactly what left the clip's
- *  勋带 strip as bare counts; the parser's keys are pinned to these stems by
- *  ribbonIcons.test.ts, so a rename on either side fails the suite instead of
- *  quietly dropping the art. */
-const ART_URLS: Record<string, string> = Object.fromEntries(
-  Object.entries(
-    import.meta.glob<string>("../../res/images/ribbons/*.webp", {
-      eager: true,
-      query: "?url",
-      import: "default",
-    }),
-  ).map(([path, url]) => {
-    const file = path.slice(path.lastIndexOf("/") + 1);
-    return [file.slice(0, file.lastIndexOf(".")), url];
-  }),
-);
+/** Site-root path of the bundled ribbon faces. `src/res` IS the webui's Vite
+ *  publicDir (vite.config.ts), so those files are served at the site root in
+ *  dev and copied under the same paths into outDir by `vite build` (base
+ *  "/"). A plain string map — NOT a `?url` import: importing a file that
+ *  lives under publicDir makes Vite warn on every one of the ~43 faces at
+ *  dev start ("files in the public directory are served at the root path"),
+ *  and the publicDir copy is the one that actually ships anyway. The stems
+ *  stay pinned to the shipped files by ribbonIcons.test.ts, whose fs check
+ *  reads src/res/images/ribbons directly — a rename on either side fails the
+ *  suite instead of quietly dropping the art (a missing face costs only the
+ *  plate: the strip falls back to a plain count). */
+const ART_ROOT = "/images/ribbons";
 
-/** One art stem -> its built URL ("" when no such file ships: bundledRibbonUrl
- *  then answers null and the painter keeps a plain count beside the cell). */
+/** One art stem -> the URL the app serves it from. */
 function art(stem: string): string {
-  return ART_URLS[stem] ?? "";
+  return `${ART_ROOT}/${stem}.webp`;
 }
 
 /** Bundled art keyed by the logical ribbon name. */

@@ -2,8 +2,10 @@
  * Replay-playback export modal (the playback bar's export button) — the
  * single surface the take is configured on:
  *
- *   · FORMAT   hikari HkPillToggleGroup (视频 / GIF) — a standard toggle
- *              group, not a menu;
+ *   · FORMAT   hikari HkPillToggleGroup (视频（MP4）/ 视频（WebM）/ GIF) —
+ *              a standard toggle group, not a menu: the two video pills are
+ *              the CONTAINER choice (MP4 = H.264 compatibility, WebM = VP9
+ *              compression), the third the image format;
  *   · PARAMS   fps / speed / resolution on ONE row (three ladders);
  *   · RANGE    hikari HkRangeRibbon — the sequence-ribbon waterfall with a
  *              draggable window over the battle timeline. The window IS
@@ -32,6 +34,8 @@ import "./HoloExportModal.scss";
 import { api as rpcApi } from "@/api";
 import { t as i18nT } from "@/i18n";
 import {
+  PLAYBACK_EXPORT_DEFAULT_FPS,
+  PLAYBACK_EXPORT_DEFAULT_SIZE,
   PLAYBACK_EXPORT_FPS,
   PLAYBACK_EXPORT_SIZES,
   PLAYBACK_EXPORT_SPEEDS,
@@ -40,6 +44,7 @@ import {
   frameTimesAtSpeed,
   gifDelayMs,
   normalizeExportRange,
+  type PlaybackExportFormat,
   type PlaybackExportSettings,
 } from "./playbackExport";
 
@@ -108,14 +113,34 @@ export default defineComponent({
 
     const ribbonDomain = computed<number[]>(() => [0, Math.max(1, props.duration)]);
     const ribbonWindow = computed<number[]>(() => [range.value.from, range.value.to]);
+    /** The format row's pills: the two video containers plus GIF. A video
+     *  pill carries its container in the value ("video:mp4" / "video:webm")
+     *  because the settings model keeps format and container separate. */
+    const formatPills = computed<{ value: string; label: string }[]>(() => [
+      { value: "video:mp4", label: i18nT("replay.export.formatVideo") },
+      { value: "video:webm", label: i18nT("replay.export.formatVideoWebm") },
+      { value: "gif", label: i18nT("replay.export.formatGif") },
+    ]);
+    const formatPick = computed(() =>
+      props.settings.format === "gif"
+        ? "gif"
+        : `video:${props.settings.container === "webm" ? "webm" : "mp4"}`,
+    );
     const setFormat = (v: string): void => {
-      props.settings.format = v === "gif" ? "gif" : "video";
-      if (!PLAYBACK_EXPORT_FPS[props.settings.format].includes(props.settings.fps)) {
-        props.settings.fps = PLAYBACK_EXPORT_FPS[props.settings.format][0];
+      const next: PlaybackExportFormat = v === "gif" ? "gif" : "video";
+      const formatChanged = next !== props.settings.format;
+      props.settings.format = next;
+      if (next === "video") {
+        props.settings.container = v === "video:webm" ? "webm" : "mp4";
       }
-      if (!PLAYBACK_EXPORT_SIZES[props.settings.format].includes(props.settings.size)) {
-        props.settings.size = PLAYBACK_EXPORT_SIZES[props.settings.format][0];
-      }
+      // A CONTAINER switch (both pills are video) leaves the ladders alone;
+      // a FORMAT switch re-seeds them to that format's own default (video:
+      // 2K @ 30 fps, GIF: 720p @ 10 fps). An "if it is on the ladder keep
+      // it" check would carry a 2K GIF over from a video take — the exact
+      // illegible/oversized case the new defaults exist to prevent.
+      if (!formatChanged) return;
+      props.settings.fps = PLAYBACK_EXPORT_DEFAULT_FPS[next];
+      props.settings.size = PLAYBACK_EXPORT_DEFAULT_SIZE[next];
     };
 
     const start = (): void => {
@@ -155,11 +180,8 @@ export default defineComponent({
             <span class="holo-export__label">{i18nT("replay.export.format")}</span>
             <HkPillToggleGroup
               label={i18nT("replay.export.format")}
-              options={[
-                { value: "video", label: i18nT("replay.export.formatVideo") },
-                { value: "gif", label: i18nT("replay.export.formatGif") },
-              ]}
-              selected={new Set([props.settings.format])}
+              options={formatPills.value}
+              selected={new Set([formatPick.value])}
               onToggle={(v: string) => setFormat(v)}
             />
           </div>

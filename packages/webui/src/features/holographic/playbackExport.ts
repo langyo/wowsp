@@ -23,8 +23,9 @@
  * One deterministic frame pipeline feeds BOTH muxers:
  *
  *   video — WebCodecs via mediabunny through the tactical exporter's
- *           renderVideoOffline (this clip's ladder: VP9 into MP4, then
- *           AV1, then H.264 — see PLAYBACK_CODEC_LADDER);
+ *           renderVideoOffline; the container pill picks the ladder (MP4 →
+ *           H.264 with MP4-native VP9/AV1 fallbacks, WebM → VP9/VP8 — see
+ *           playbackCodecLadder);
  *   gif   — gifenc, per-frame quantized palette, centisecond delays.
  *
  * The caller (HolographicMap) owns the playhead: every frame first seeks
@@ -327,6 +328,12 @@ export function recorderPanelFits(available = recorderPanelHeight()): boolean {
 /** Export formats offered by the modal. */
 export type PlaybackExportFormat = "video" | "gif";
 
+/** Video container choice for the modal: MP4 (H.264 — the pair every player,
+ *  ffmpeg and hardware decoder carries) or WebM (VP9 — clearly better
+ *  compression per byte, in a container every browser and modern player
+ *  reads). A GIF take has a single image container and ignores it. */
+export type PlaybackVideoContainer = "mp4" | "webm";
+
 /** Export map-square views offered by the modal: the 2D tactical painting
  *  (the clip's original map layer) or the replay's own three.js scene from
  *  a fixed god camera. ONLY the map square swaps — the score pill, both
@@ -334,17 +341,34 @@ export type PlaybackExportFormat = "video" | "gif";
  *  info are byte-identical between the two modes. */
 export type PlaybackExportView = "2d" | "3d";
 
-/** The replay clip's video ladder — VP9 into MP4 first (the modern MP4
- *  combination every Chromium/ffmpeg/VLC toolchain plays: `vp09` sample
- *  entries are standard ISO BMFF), AV1 next (better compression, slower
- *  encode), H.264 as the last resort. Deliberately NOT VP8-in-MP4: the
- *  `vp08` binding exists on paper but no mainstream player decodes it
- *  (verified: Chromium `canPlayType` refuses, ffmpeg refuses to mux). */
-export const PLAYBACK_CODEC_LADDER: readonly OfflineCodecChoice[] = [
+/** The MP4 ladder, best first: H.264 (the compatibility pair — every
+ *  Chromium/ffmpeg/VLC toolchain and every hardware decoder has it), then the
+ *  MP4-native VP9/AV1 pairs as fallbacks for hosts whose WebCodecs exposes no
+ *  AVC encoder (`vp09`/`av01` sample entries are standard ISO BMFF).
+ *  Deliberately NOT VP8-in-MP4: the `vp08` binding exists on paper but no
+ *  mainstream player decodes it (verified: Chromium `canPlayType` refuses,
+ *  ffmpeg refuses to mux). */
+export const PLAYBACK_CODEC_LADDER_MP4: readonly OfflineCodecChoice[] = [
+  { codec: "avc", ext: "mp4" },
   { codec: "vp9", ext: "mp4" },
   { codec: "av1", ext: "mp4" },
-  { codec: "avc", ext: "mp4" },
 ];
+/** The WebM ladder, best first: VP9 into WebM (the compression choice — the
+ *  same quality in a visibly smaller file than AVC), VP8 as the last-resort
+ *  fallback every browser decodes. mediabunny's WebMOutputFormat accepts
+ *  exactly vp8/vp9/av1 into Matroska's WebM profile. */
+export const PLAYBACK_CODEC_LADDER_WEBM: readonly OfflineCodecChoice[] = [
+  { codec: "vp9", ext: "webm" },
+  { codec: "vp8", ext: "webm" },
+];
+/** The ladder for a container choice — the ONLY place the codec pair is
+ *  picked, so the modal's MP4/WebM pills, the encoder that runs and the
+ *  file extension can never disagree. WebM always starts on the VP9 pair. */
+export function playbackCodecLadder(
+  container: PlaybackVideoContainer,
+): readonly OfflineCodecChoice[] {
+  return container === "webm" ? PLAYBACK_CODEC_LADDER_WEBM : PLAYBACK_CODEC_LADDER_MP4;
+}
 /** The export settings; `from`/`to` are the range ribbon's window, in
  *  battle seconds. */
 export interface PlaybackExportSettings {
@@ -353,6 +377,9 @@ export interface PlaybackExportSettings {
    *  the replay's three.js scene from the fixed god camera (see
    *  exportGodCamera). Layout around the square is unchanged. */
   view: PlaybackExportView;
+  /** Video container (ignored by GIF): "mp4" = H.264, the compatibility
+   *  pair; "webm" = VP9, the smaller file. */
+  container: PlaybackVideoContainer;
   /** Window start, battle seconds. */
   from: number;
   /** Window end, battle seconds (clamped to an end > from at job time). */
@@ -377,10 +404,17 @@ export const PLAYBACK_EXPORT_FPS: Record<PlaybackExportFormat, number[]> = {
   video: [30, 60],
   gif: [10, 15],
 };
-/** GIF frame budget: every frame is a full quantized bitmap held in
- *  memory until finish(), so an unbounded take (a 1× full match) would
- *  balloon past a gigabyte. The modal refuses to start past this and
- *  says how to shrink the take. */
+/** Default frame rate per format — the rung a fresh take (and a format
+ *  flip) starts on, kept explicit beside the size defaults. */
+export const PLAYBACK_EXPORT_DEFAULT_FPS: Record<PlaybackExportFormat, number> = {
+  video: 30,
+  gif: 10,
+};
+/** GIF frame budget: every frame's compressed bitmap is held in memory
+ *  until finish(), so an unbounded take (a 1× full match) would balloon past
+ *  a gigabyte — and the 720p+ size ladder makes each frame far heavier than
+ *  the old 480 rung did. The modal refuses to start past this and says how to
+ *  shrink the take. */
 export const GIF_MAX_FRAMES = 1500;
 /** Video frame budget: mediabunny's BufferTarget also holds the whole
  *  mux in memory, so a 1× 60 fps full match (72k frames) is not a
@@ -415,12 +449,21 @@ export function clampRangeToBudget(
   if (format !== "gif") return to;
   return Math.min(to, from + exportMaxSpan(format, fps, speed));
 }
-/** Width ladders per format: the HUD composition needs width for its side
- *  columns, so video starts at 1080 (1440 default — the map text goes
- *  blurry at 1080's 720px map square); GIF stays small for size reasons. */
+/** Width ladders per format. Video runs 1080 → 4K (the HUD composition
+ *  needs width for its side columns, and 4K is the archive rung); GIF runs
+ *  720p → 2K because the old 480/640 rungs were simply illegible — GIF files
+ *  grow steeply with resolution, which is the user's explicit call. */
 export const PLAYBACK_EXPORT_SIZES: Record<PlaybackExportFormat, number[]> = {
-  video: [1080, 1440, 1920],
-  gif: [480, 640],
+  video: [1080, 1440, 1920, 2160],
+  gif: [720, 1080, 1920],
+};
+/** Default width per format: 2K for video (the map text is the whole point —
+ *  至少 2K is the user's floor) and 720p for GIF. Kept SEPARATE from the
+ *  ladder order on purpose: clampExportSettings must re-seed an off-ladder
+ *  width to the DEFAULT, never to the ladder's smallest rung. */
+export const PLAYBACK_EXPORT_DEFAULT_SIZE: Record<PlaybackExportFormat, number> = {
+  video: 1920,
+  gif: 720,
 };
 /** Battle-time compression ladder (shared by both formats). */
 export const PLAYBACK_EXPORT_SPEEDS = [1, 2, 5, 10, 20] as const;
@@ -442,8 +485,13 @@ export function clampExportSettings(s: PlaybackExportSettings): PlaybackExportSe
     // A view outside the two known layers (stale settings, hand-edited
     // state) falls back to the tactical painting — never a blank square.
     view: s.view === "3d" ? "3d" : "2d",
-    fps: fps.includes(s.fps) ? s.fps : fps[0],
-    size: sizes.includes(s.size) ? s.size : sizes[0],
+    // Same rule for the container: only an explicit "webm" asks for WebM.
+    container: s.container === "webm" ? "webm" : "mp4",
+    fps: fps.includes(s.fps) ? s.fps : PLAYBACK_EXPORT_DEFAULT_FPS[s.format],
+    // Off-ladder widths re-seed to the FORMAT DEFAULT (2K video / 720 GIF),
+    // not the smallest rung — a format flip must never quietly downgrade the
+    // take below the user's floor.
+    size: sizes.includes(s.size) ? s.size : PLAYBACK_EXPORT_DEFAULT_SIZE[s.format],
     speed: (PLAYBACK_EXPORT_SPEEDS as readonly number[]).includes(s.speed)
       ? s.speed
       : PLAYBACK_EXPORT_DEFAULT_SPEED[s.format],
@@ -2243,6 +2291,9 @@ export type PlaybackExportPhase = "feed" | "models" | "render" | "finalize";
 
 export interface PlaybackExportRequest {
   format: PlaybackExportFormat;
+  /** Video container (default "mp4"): picks the codec ladder through
+   *  playbackCodecLadder. Ignored by the GIF path. */
+  container?: PlaybackVideoContainer;
   fps: number;
   /** Frame battle times — speed-compressed (frameTimesAtSpeed): spaced
    *  speed/fps battle seconds apart. They drive WHAT is painted; the
@@ -2294,8 +2345,9 @@ export interface PlaybackExportRequest {
 
 export interface PlaybackExportResult {
   blob: Blob;
-  /** Container of the produced file. `webm` is inherited from the shared
-   *  exporter's type — this clip's ladder only ever yields mp4 (or gif). */
+  /** Container of the produced file: the video path yields whatever
+   *  playbackCodecLadder's winning rung muxes (mp4 for the compatibility
+   *  pill, webm for the compression pill), the image path gif. */
   ext: "mp4" | "webm" | "gif";
   cancelled: boolean;
 }
@@ -2457,8 +2509,9 @@ export async function renderPlaybackExport(
       width: layout.width,
       height: layout.height,
       frameTimestamps: pts,
-      // VP9 → AV1 → AVC, all inside MP4 (see PLAYBACK_CODEC_LADDER).
-      codecLadder: PLAYBACK_CODEC_LADDER,
+      // MP4 → AVC/VP9/AV1, WebM → VP9/VP8 (see playbackCodecLadder): the
+      // modal's container pill is the single switch for container + codec.
+      codecLadder: playbackCodecLadder(req.container ?? "mp4"),
       paintAt: (t, g) => {
         // The exporter's canvas is our canvas — compose straight into it.
         composePlaybackFrame(g, layout, req, t);

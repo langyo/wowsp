@@ -118,6 +118,8 @@ import {
   EXPORT_GOD_FOV_DEG,
   EXPORT_LOGICAL,
   EXPORT_TEAM_STAT_COLS,
+  PLAYBACK_EXPORT_DEFAULT_FPS,
+  PLAYBACK_EXPORT_DEFAULT_SIZE,
   buildRecorderSourceHits,
   clampExportSettings,
   exportGodCamera,
@@ -3977,11 +3979,14 @@ const RECORDED_DOLLY_MIN = -40;
       // against the replay in the job.
       from: 0,
       to: 0,
-      fps: 30,
+      fps: PLAYBACK_EXPORT_DEFAULT_FPS.video,
       speed: 5,
       // 2K default: the map text is the whole point, and 1080's 720px map
-      // square reads soft on every report so far.
-      size: 1920,
+      // square reads soft on every report so far. 4K is one pill away.
+      size: PLAYBACK_EXPORT_DEFAULT_SIZE.video,
+      // MP4 (H.264) by default — the pair every player plays; WebM (VP9)
+      // is the smaller-file pill next to it.
+      container: "mp4",
       footer: true,
       // The clip's stats default follows the LIVE surface: with every stat
       // column removed (or PR off and nothing else configured) the roster
@@ -4620,6 +4625,7 @@ const RECORDED_DOLLY_MIN = -40;
         exportPhase.value = "render";
         const result = await renderPlaybackExport({
           format: s.format,
+          container: s.container,
           fps: s.fps,
           times,
           targetWidth: s.size,

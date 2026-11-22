@@ -589,6 +589,7 @@
     "title": "リプレイを書き出す",
     "format": "形式",
     "formatVideo": "動画（MP4）",
+    "formatVideoWebm": "動画（WebM）",
     "formatGif": "GIF アニメ",
     "view": "視点",
     "view2d": "2D 戦術マップ",

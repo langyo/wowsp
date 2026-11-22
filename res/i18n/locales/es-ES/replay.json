@@ -589,6 +589,7 @@
     "title": "Exportar repetición",
     "format": "Formato",
     "formatVideo": "Vídeo (MP4)",
+    "formatVideoWebm": "Vídeo (WebM)",
     "formatGif": "GIF animado",
     "view": "Vista",
     "view2d": "Mapa táctico 2D",

@@ -589,6 +589,7 @@
     "title": "Export replay clip",
     "format": "Format",
     "formatVideo": "Video (MP4)",
+    "formatVideoWebm": "Video (WebM)",
     "formatGif": "GIF animation",
     "view": "View",
     "view2d": "2D tactical map",
