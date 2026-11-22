@@ -4,7 +4,7 @@
  *  construction must trust the stem (optimistic) instead of the build-time
  *  glob — otherwise every ship renders the placeholder hull even though the
  *  runtime pack is fully populated. */
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type * as THREE from "three";
@@ -12,9 +12,12 @@ import type * as THREE from "three";
 import { registerRuntimeShipEntry, resetRuntimeShipEntries } from "@/utils/runtimeShipDb";
 import {
   asModelChainError,
+  clearShipModelLoadFailures,
   fetchModelResource,
+  getShipModelLoadFailures,
   initModelPack,
   loadGlbModel,
+  noteShipModelUnavailable,
   loadMapMinimapImage,
   noteMapMinimapLoadError,
   probeMinimapPackEra,
@@ -512,6 +515,101 @@ describe("minimap pack era fallback", () => {
 // the missing-vs-broken split) instead of parsing the percent-encoded
 // sentence (2026-11 user direction: 嘎嘎鸭-class failures dumped whole
 // asset.localhost URLs onto the error card).
+// ── session ship-model load failures (resource-health check 6) ───────────
+// The in-app resource-health diagnostic reads the loader's own aggregated
+// failures instead of re-parsing console lines: one entry per ship chain,
+// refreshed on repeat failures and cleared when the chain later succeeds.
+describe("session ship model load failures", () => {
+  const packUrl = (stem: string) =>
+    `http://asset.localhost/${encodeURIComponent(`C:/cache-root/models/ships/${stem}.glb`)}`;
+
+  beforeEach(() => clearShipModelLoadFailures());
+  afterEach(() => {
+    clearShipModelLoadFailures();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("records a whole-chain miss per ship and refreshes the last error", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("gone", { status: 404 })));
+    await loadGlbModel([packUrl("Missing"), packUrl("AlsoMissing")]).catch(() => {});
+    let failures = getShipModelLoadFailures();
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      file: "ships/Missing.glb",
+      chain: ["ships/Missing.glb", "ships/AlsoMissing.glb"],
+      count: 1,
+    });
+    expect(failures[0]!.reason).toContain("missing from the model pack");
+
+    await loadGlbModel(packUrl("Missing")).catch(() => {});
+    failures = getShipModelLoadFailures();
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.count).toBe(2);
+  });
+
+  it("records a ship that never produced any model URL", () => {
+    noteShipModelUnavailable("Lion", "no model URL");
+    let failures = getShipModelLoadFailures();
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      file: "",
+      label: "Lion",
+      reason: "no model URL",
+      count: 1,
+    });
+    noteShipModelUnavailable("Lion");
+    failures = getShipModelLoadFailures();
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.count).toBe(2);
+    expect(failures[0]!.reason).toContain("no model URL could be built");
+  });
+
+  it("ignores non-ship chains and clears the entry on a later success", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("gone", { status: 404 })));
+    await loadGlbModel(["/models/maps/map.glb"]).catch(() => {});
+    expect(getShipModelLoadFailures()).toHaveLength(0);
+
+    await loadGlbModel([packUrl("BrokenShip")]).catch(() => {});
+    expect(getShipModelLoadFailures()).toHaveLength(1);
+
+    // The pack recovers: the same chain now fetches and parses the real
+    // meshopt fixture, so the stale failure must disappear.
+    const FIXTURE = join(
+      process.cwd(),
+      "src",
+      "features",
+      "holographic",
+      "modelLoader.fixtures",
+      "meshopt-cube.glb",
+    );
+    const bytes = new Uint8Array(readFileSync(FIXTURE)).buffer;
+    const blobs = new Map<string, Blob>();
+    vi.spyOn(URL, "createObjectURL").mockImplementation((obj: Blob | MediaSource) => {
+      const url = `blob:recovered-${blobs.size}`;
+      blobs.set(url, obj as Blob);
+      return url;
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url.startsWith("blob:")) {
+        const blob = blobs.get(url);
+        if (blob) return blob.arrayBuffer().then((b) => new Response(b));
+      }
+      if (url === packUrl("BrokenShip")) return Promise.resolve(new Response(bytes));
+      return Promise.resolve(new Response("gone", { status: 404 }));
+    });
+    await loadGlbModel([packUrl("BrokenShip")]);
+    expect(getShipModelLoadFailures()).toHaveLength(0);
+  });
+});
+
 describe("loadGlbModel chain failure structure", () => {
   const packUrl = (stem: string) =>
     `http://asset.localhost/${encodeURIComponent(`C:/cache-root/models/ships/${stem}.glb`)}`;

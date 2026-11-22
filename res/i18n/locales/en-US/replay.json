@@ -637,7 +637,39 @@
     "draws": "Draws",
     "gpu": "GPU",
     "sections": "Sections",
-    "pin": "Pin (click-through)"
+    "pin": "Pin (click-through)",
+    "resources": "Resources",
+    "recheck": "Recheck",
+    "environment": "Environment",
+    "env": {
+      "tauri": "Tauri shell",
+      "browser": "No Tauri shell (browser dev)"
+    },
+    "idle": "Not checked yet — open a replay view or press Recheck",
+    "missingModels": "Missing models",
+    "fallbackModels": "Embedded fallback",
+    "status": {
+      "pass": "Pass",
+      "fail": "Fail",
+      "fallback": "Fallback",
+      "info": "Info"
+    },
+    "check": {
+      "cacheRoot": "Cache root",
+      "assetProtocol": "Asset protocol",
+      "pack": "Pack content",
+      "replayMap": "Replay map",
+      "shipModels": "Ship models",
+      "sessionFailures": "Session failures"
+    },
+    "checkHint": {
+      "cacheRoot": "Download or repair the resource pack in Settings → Resources; the desktop cache root should be %LOCALAPPDATA%\\WoWSP.",
+      "assetProtocol": "Make sure tauri.conf.json > assetProtocol.scope covers the cache root ($LOCALDATA/WoWSP/**), or reinstall the resource pack.",
+      "pack": "Re-download the resource pack (Settings → Resources).",
+      "replayMap": "The pack lacks this map's minimap/GLB — re-download the resource pack.",
+      "shipModels": "Re-download the resource pack to fill missing models; the embedded fallback is a normal degradation.",
+      "sessionFailures": "Check the console [modelLoader] logs; after repairing the pack, reopen the replay view."
+    }
   },
   "chatLog": "Battle chat",
   "chat": {

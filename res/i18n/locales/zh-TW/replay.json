@@ -637,7 +637,39 @@
     "draws": "繪製",
     "gpu": "圖形適配器",
     "sections": "效能分區",
-    "pin": "固定（點擊穿透）"
+    "pin": "固定（點擊穿透）",
+    "resources": "資源",
+    "recheck": "重新檢查",
+    "environment": "環境",
+    "env": {
+      "tauri": "Tauri 外殼",
+      "browser": "無 Tauri 外殼（瀏覽器開發模式）"
+    },
+    "idle": "尚未檢查——開啟回放檢視或點擊重新檢查",
+    "missingModels": "缺模型",
+    "fallbackModels": "內嵌回退",
+    "status": {
+      "pass": "通過",
+      "fail": "失敗",
+      "fallback": "回退",
+      "info": "資訊"
+    },
+    "check": {
+      "cacheRoot": "資源快取根",
+      "assetProtocol": "資源協定",
+      "pack": "資源包內容",
+      "replayMap": "本回放地圖",
+      "shipModels": "艦船模型",
+      "sessionFailures": "本次載入失敗"
+    },
+    "checkHint": {
+      "cacheRoot": "在「設定 → 資源」中下載或修復資源包；桌面端快取根應位於 %LOCALAPPDATA%\\WoWSP。",
+      "assetProtocol": "檢查 tauri.conf.json 的 assetProtocol.scope 是否涵蓋快取根（$LOCALDATA/WoWSP/**），或重新安裝資源包。",
+      "pack": "重新下載資源包（設定 → 資源）。",
+      "replayMap": "資源包缺少此地圖的 minimap/GLB——重新下載資源包。",
+      "shipModels": "缺模型可重新下載資源包補齊；內嵌回退屬於正常降級。",
+      "sessionFailures": "查看主控台 [modelLoader] 日誌；修復資源包後重開回放檢視。"
+    }
   },
   "chatLog": "聊天記錄",
   "chat": {

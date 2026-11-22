@@ -20,6 +20,10 @@ import {
 } from "./modelLoader";
 import { clearShipMarkerCache } from "./shipMarker";
 import { clearPropMarkerCache } from "./propMarker";
+import {
+  clearReplayResourceContext,
+  setReplayResourceContext,
+} from "./resourceHealth";
 import { hpAtTime, sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { shouldReserveTabKey } from "./tabKeyGate";
 import {
@@ -3850,8 +3854,30 @@ const RECORDED_DOLLY_MIN = -40;
       }
     });
 
+    // Resource-health context: hand the current map + roster to the session
+    // diagnostic (the dev stats HUD's 资源 tab). setReplayResourceContext
+    // also arms the automatic run for a view that opens with a ship-model
+    // failure already logged this session, so the silent-empty-scene case
+    // reports itself without anyone opening the HUD.
+    watch(
+      [() => props.mapId, () => props.replayPath, () => props.vehicles] as const,
+      ([mapId, replayPath, vehicles]) => {
+        setReplayResourceContext({
+          mapId: mapId ?? "",
+          replayPath: replayPath ?? "",
+          ships: (vehicles ?? []).map((vehicle) => ({
+            shipId: vehicle.shipId ?? null,
+            name: vehicle.shipName || vehicle.name,
+            fallbackName: vehicle.shipName ?? null,
+          })),
+        });
+      },
+      { immediate: true },
+    );
+
     onBeforeUnmount(() => {
       mapTornDown = true;
+      clearReplayResourceContext();
       endFreeLook();
       endRecordedLook();
       stopWaterThemeWatch();

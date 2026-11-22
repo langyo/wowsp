@@ -637,7 +637,39 @@
     "draws": "Llamadas",
     "gpu": "GPU",
     "sections": "Secciones",
-    "pin": "Fijar (permitir clics)"
+    "pin": "Fijar (permitir clics)",
+    "resources": "Recursos",
+    "recheck": "Revisar de nuevo",
+    "environment": "Entorno",
+    "env": {
+      "tauri": "Shell de Tauri",
+      "browser": "Sin shell de Tauri (modo navegador)"
+    },
+    "idle": "Aún sin revisar: abre la vista de repetición o pulsa Revisar de nuevo",
+    "missingModels": "Modelos faltantes",
+    "fallbackModels": "Respaldo integrado",
+    "status": {
+      "pass": "Correcto",
+      "fail": "Fallo",
+      "fallback": "Respaldo",
+      "info": "Info"
+    },
+    "check": {
+      "cacheRoot": "Raíz de caché",
+      "assetProtocol": "Protocolo de recursos",
+      "pack": "Contenido del paquete",
+      "replayMap": "Mapa de la repetición",
+      "shipModels": "Modelos de barcos",
+      "sessionFailures": "Fallos de la sesión"
+    },
+    "checkHint": {
+      "cacheRoot": "Descarga o repara el paquete de recursos en Ajustes → Recursos; la raíz de caché de escritorio debe ser %LOCALAPPDATA%\\WoWSP.",
+      "assetProtocol": "Comprueba que tauri.conf.json > assetProtocol.scope cubra la raíz de caché ($LOCALDATA/WoWSP/**) o reinstala el paquete de recursos.",
+      "pack": "Vuelve a descargar el paquete de recursos (Ajustes → Recursos).",
+      "replayMap": "Al paquete le falta el minimapa/GLB de este mapa: vuelve a descargar el paquete.",
+      "shipModels": "Vuelve a descargar el paquete para los modelos faltantes; el respaldo integrado es una degradación normal.",
+      "sessionFailures": "Revisa los registros [modelLoader] de la consola; tras reparar el paquete, reabre la vista de repetición."
+    }
   },
   "chatLog": "Chat de batalla",
   "chat": {

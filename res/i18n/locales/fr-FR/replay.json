@@ -637,7 +637,39 @@
     "draws": "Appels",
     "gpu": "GPU",
     "sections": "Sections",
-    "pin": "Épingler (laisser passer les clics)"
+    "pin": "Épingler (laisser passer les clics)",
+    "resources": "Ressources",
+    "recheck": "Revérifier",
+    "environment": "Environnement",
+    "env": {
+      "tauri": "Coque Tauri",
+      "browser": "Sans coque Tauri (mode navigateur)"
+    },
+    "idle": "Pas encore vérifié — ouvrez la vue de replay ou cliquez sur Revérifier",
+    "missingModels": "Modèles manquants",
+    "fallbackModels": "Repli intégré",
+    "status": {
+      "pass": "Réussi",
+      "fail": "Échec",
+      "fallback": "Repli",
+      "info": "Info"
+    },
+    "check": {
+      "cacheRoot": "Racine du cache",
+      "assetProtocol": "Protocole de ressources",
+      "pack": "Contenu du pack",
+      "replayMap": "Carte du replay",
+      "shipModels": "Modèles de navires",
+      "sessionFailures": "Échecs de session"
+    },
+    "checkHint": {
+      "cacheRoot": "Téléchargez ou réparez le pack de ressources dans Réglages → Ressources ; la racine du cache de bureau doit être %LOCALAPPDATA%\\WoWSP.",
+      "assetProtocol": "Vérifiez que tauri.conf.json > assetProtocol.scope couvre la racine du cache ($LOCALDATA/WoWSP/**), ou réinstallez le pack de ressources.",
+      "pack": "Retéléchargez le pack de ressources (Réglages → Ressources).",
+      "replayMap": "Le pack n'a pas le minimap/GLB de cette carte — retéléchargez le pack de ressources.",
+      "shipModels": "Retéléchargez le pack pour les modèles manquants ; le repli intégré est une dégradation normale.",
+      "sessionFailures": "Consultez les journaux [modelLoader] de la console ; après réparation du pack, rouvrez la vue de replay."
+    }
   },
   "chatLog": "Chat de bataille",
   "chat": {

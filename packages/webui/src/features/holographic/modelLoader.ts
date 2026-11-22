@@ -81,6 +81,36 @@ export function isModelPackReady(): boolean {
   return _modelCacheRoot != null;
 }
 
+// ── Resource-health probes (see features/holographic/resourceHealth.ts) ──
+/** Live model-pack wiring — the SAME root + convertFileSrc the URL
+ *  builders below use. The in-app resource-health diagnostic must construct
+ *  its probe URLs exactly like the loader does, or it would diagnose a
+ *  different environment than the one the scene actually fetches from. */
+export interface ModelPackWiring {
+  cacheRoot: string | null;
+  convertFileSrc: ((path: string) => string) | null;
+}
+
+export function modelPackWiring(): ModelPackWiring {
+  return { cacheRoot: _modelCacheRoot, convertFileSrc: _convertFileSrc };
+}
+
+/** Build the loader-form asset URL for a pack-relative file
+ *  (".res-version.json", "models/ships/X.glb", …). `wiring` defaults to
+ *  the live loader wiring; a caller may pass the RPC-reported root instead
+ *  when the loader has not wired yet. Null when the asset protocol or the
+ *  root is unavailable. */
+export function packFileUrl(
+  relPath: string,
+  wiring?: ModelPackWiring,
+): string | null {
+  const root = wiring ? wiring.cacheRoot : _modelCacheRoot;
+  const convert = wiring ? wiring.convertFileSrc : _convertFileSrc;
+  const rel = relPath.replace(/^[\\/]+/, "");
+  if (!root || !convert || !rel) return null;
+  return convert(`${root}/${rel}`);
+}
+
 // ── Ship model availability (lowercase → original-casing stem map) ──────
 const _shipGlobKeys = Object.keys(
   import.meta.glob("../../res/models/ships/*.glb"),
@@ -119,6 +149,27 @@ const propCasedByLower = new Map<string, string>();
 for (const path of _propGlobKeys) {
   const original = path.split("/").pop()!.replace(/\.glb$/i, "");
   propCasedByLower.set(original.toLowerCase(), original);
+}
+
+/** Build-time glob sizes — the only model-file counts available without a
+ *  directory listing (the asset protocol cannot enumerate directories).
+ *  Production dists prune every GLB, so these are nonzero only on a dev
+ *  tree or the mobile bundle; the resource-health diagnostic reports them
+ *  as the bundled fallback figure next to its roster probes. */
+export interface BundledModelCounts {
+  ships: number;
+  maps: number;
+  planes: number;
+  props: number;
+}
+
+export function bundledModelCounts(): BundledModelCounts {
+  return {
+    ships: shipCasedByLower.size,
+    maps: mapCasedByLower.size,
+    planes: planeCasedByLower.size,
+    props: propCasedByLower.size,
+  };
 }
 
 // ── ship_models.json mapping ─────────────────────────────────────────────
@@ -661,14 +712,20 @@ export function loadMapMinimapImage(
 
 let _mapBoundsPromise: Promise<Map<string, MapBounds>> | null = null;
 
+/** URL of the minimap world-bounds index, built EXACTLY like
+ *  loadMapBounds (dev reads the repo's publicDir copy even when a pack is
+ *  wired). The resource-health probe reads the same URL the board reads. */
+export function resolveMapBoundsUrl(): string {
+  return !import.meta.env.DEV && _modelCacheRoot && _convertFileSrc
+    ? _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps.json`)
+    : "/models/maps/minimaps.json";
+}
+
 /** Lazy-load `minimaps.json` (space id → world bounds). Missing file or
  *  parse failure yields an empty map — callers fall back to data bounds. */
 export function loadMapBounds(): Promise<Map<string, MapBounds>> {
   if (!_mapBoundsPromise) {
-    const url =
-      !import.meta.env.DEV && _modelCacheRoot && _convertFileSrc
-        ? _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps.json`)
-        : "/models/maps/minimaps.json";
+    const url = resolveMapBoundsUrl();
     _mapBoundsPromise = fetchModelResource(url)
       .then((r) => (r.ok ? r.json() : {}))
       .then((j) => new Map(Object.entries(j) as [string, MapBounds][]))
@@ -1088,6 +1145,129 @@ export function asModelChainError(e: unknown): ModelChainError | null {
   return e instanceof ModelChainError ? e : null;
 }
 
+// ── Session ship-model load failures (resource-health check 6) ──────────
+/** One ship model chain that failed to load this session, aggregated by
+ *  its FIRST candidate file. The in-app resource-health diagnostic reports
+ *  these so a silent placeholder scene self-explains instead of looking
+ *  like the app simply drew nothing. */
+export interface ModelLoadFailure {
+  /** Decoded pack-relative file of the first candidate ("ships/X.glb");
+   *  empty for a ship that never produced a URL at all. */
+  file: string;
+  /** Every decoded candidate file the chain tried, in order. */
+  chain: string[];
+  /** Ship label for a "no model URL" failure (no candidate ever existed). */
+  label?: string;
+  /** Last aggregated error (missing / transport / parse reasons). */
+  reason: string;
+  /** Epoch ms of the last failure for this file. */
+  at: number;
+  /** How many times this file's chain failed this session. */
+  count: number;
+}
+
+const _shipModelFailures = new Map<string, ModelLoadFailure>();
+const _shipModelFailureListeners = new Set<() => void>();
+
+function isShipModelUrl(url: string | string[]): boolean {
+  const urls = typeof url === "string" ? [url] : url;
+  return urls.some((candidate) => {
+    try {
+      return decodeURIComponent(candidate).includes("/models/ships/");
+    } catch {
+      return candidate.includes("/models/ships/");
+    }
+  });
+}
+
+function describeLoadFailure(url: string, e: unknown): string {
+  const chain = asModelChainError(e);
+  if (chain) return chain.misses.map((miss) => `${miss.file}: ${miss.reason}`).join("; ");
+  return describeCandidateMiss(url, e).reason;
+}
+
+function notifyShipModelFailureChange(): void {
+  for (const listener of [..._shipModelFailureListeners]) {
+    try {
+      listener();
+    } catch {
+      // Diagnostics must never break a model load.
+    }
+  }
+}
+
+function recordShipModelFailure(url: string | string[], e: unknown): void {
+  if (!isShipModelUrl(url)) return;
+  const urls = typeof url === "string" ? [url] : url;
+  const first = urls[0];
+  if (!first) return;
+  const file = modelFileFromUrl(first);
+  const prior = _shipModelFailures.get(file);
+  _shipModelFailures.set(file, {
+    file,
+    chain: urls.map(modelFileFromUrl),
+    reason: describeLoadFailure(first, e),
+    at: Date.now(),
+    count: (prior?.count ?? 0) + 1,
+  });
+  notifyShipModelFailureChange();
+}
+
+function clearShipModelFailure(url: string | string[]): void {
+  if (!isShipModelUrl(url)) return;
+  const first = typeof url === "string" ? url : url[0];
+  if (!first) return;
+  // Entries are keyed by the FIRST candidate file; deleting the rest of the
+  // chain could drop another ship's entry when a substitute hull is shared.
+  if (_shipModelFailures.delete(modelFileFromUrl(first))) {
+    notifyShipModelFailureChange();
+  }
+}
+
+/** Record a ship that never produced ANY model URL — the empty-pack case
+ *  (no wired cache and no bundled GLB) where actorBuild skips the load
+ *  chain entirely. Without this entry the "silent empty scene" would log no
+ *  loader failure and the resource-health auto-run would never arm. */
+export function noteShipModelUnavailable(label: string, reason?: string): void {
+  const key = `label:${label}`;
+  const prior = _shipModelFailures.get(key);
+  _shipModelFailures.set(key, {
+    file: "",
+    chain: [],
+    label,
+    reason:
+      reason ??
+      "no model URL could be built (no pack cache and no bundled GLB)",
+    at: Date.now(),
+    count: (prior?.count ?? 0) + 1,
+  });
+  notifyShipModelFailureChange();
+}
+
+/** Every ship model chain that currently has NO usable source this session,
+ *  newest first. A later successful load of the same chain clears its entry,
+ *  so the list always describes the CURRENT session state. */
+export function getShipModelLoadFailures(): readonly ModelLoadFailure[] {
+  return [..._shipModelFailures.values()].sort((a, b) => b.at - a.at);
+}
+
+/** Drop the session failure list (the resource-health auto-run arms off it;
+ *  tests use this to keep suites hermetic). */
+export function clearShipModelLoadFailures(): void {
+  if (_shipModelFailures.size === 0) return;
+  _shipModelFailures.clear();
+  notifyShipModelFailureChange();
+}
+
+/** Subscribe to failure-list changes (a failure appearing, or a later
+ *  success clearing one). Returns the unsubscribe. */
+export function subscribeShipModelLoadFailures(listener: () => void): () => void {
+  _shipModelFailureListeners.add(listener);
+  return () => {
+    _shipModelFailureListeners.delete(listener);
+  };
+}
+
 /**
  * Load a GLB from a single URL, or walk an ordered candidate chain: the
  * first candidate that fetches AND parses into a THREE.Group wins; a fetch
@@ -1095,24 +1275,40 @@ export function asModelChainError(e: unknown): ModelChainError | null {
  * steps to the next candidate. Only when every candidate fails does this
  * throw one aggregated ModelChainError carrying each decoded miss. A
  * single-string input keeps its previous behavior unchanged.
+ *
+ * Ship-model failures are recorded for the resource-health diagnostic; a
+ * later success on the same chain clears its stale entry.
  */
 export async function loadGlbModel(url: string | string[]): Promise<THREE.Group> {
-  if (typeof url === "string") return loadGlbFromUrl(url);
+  if (typeof url === "string") {
+    try {
+      const model = await loadGlbFromUrl(url);
+      clearShipModelFailure(url);
+      return model;
+    } catch (e) {
+      recordShipModelFailure(url, e);
+      throw e;
+    }
+  }
   if (url.length === 0) {
     throw new Error("no usable source for an empty model URL chain");
   }
-  if (url.length === 1) return loadGlbFromUrl(url[0]);
+  if (url.length === 1) return loadGlbModel(url[0]!);
   const misses: ModelCandidateMiss[] = [];
   for (const candidate of url) {
     try {
-      return await loadGlbFromUrl(candidate);
+      const model = await loadGlbFromUrl(candidate);
+      clearShipModelFailure(url);
+      return model;
     } catch (e) {
       const miss = describeCandidateMiss(candidate, e);
       misses.push(miss);
       console.warn(`[modelLoader] ${miss.file} failed (${miss.reason}), trying next candidate`);
     }
   }
-  throw new ModelChainError(url, misses);
+  const error = new ModelChainError(url, misses);
+  recordShipModelFailure(url, error);
+  throw error;
 }
 
 export function hasShipModels(): boolean {

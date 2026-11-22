@@ -10,6 +10,7 @@
 import * as THREE from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
+  noteShipModelUnavailable,
   resolveShipModelCandidatesForEntry,
   shipModelUrlCandidates,
   shipNameFromModelDb,
@@ -524,6 +525,13 @@ export function rebuildActors(ctx: MapInternals) {
     if (modelUrl.length === 0) {
       console.warn(`[HolographicMap] no model URL for entity ${traj.entityId}`
         + ` (ship: ${shipInfo?.name ?? "?"}, shipId: ${rosterEntry?.shipId}, encyclopedia: ${encSpecs.length} entries)`);
+      // The empty-pack silent scene: the load chain never runs, so record
+      // the per-ship failure here for the resource-health diagnostic
+      // (check 6) and its automatic run.
+      noteShipModelUnavailable(
+        shipInfo?.name ?? rosterEntry?.shipName ?? `#${traj.entityId}`,
+        `no model URL (shipId ${rosterEntry?.shipId ?? traj.kind?.shipId ?? "?"}, encyclopedia ${encSpecs.length} entries)`,
+      );
       if (!buildFromLoadedPool()) ctx.modelWaiters.push({ marker, traj });
     } else {
       buildShipMarker({ url: modelUrl, role, type: shipType })

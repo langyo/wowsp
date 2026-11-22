@@ -637,7 +637,39 @@
     "draws": "ドロー",
     "gpu": "GPU",
     "sections": "セクション",
-    "pin": "固定（クリック透過）"
+    "pin": "固定（クリック透過）",
+    "resources": "リソース",
+    "recheck": "再確認",
+    "environment": "環境",
+    "env": {
+      "tauri": "Tauri シェル",
+      "browser": "Tauri シェルなし（ブラウザ開発モード）"
+    },
+    "idle": "未確認 — リプレイ画面を開くか「再確認」を押してください",
+    "missingModels": "モデル不足",
+    "fallbackModels": "内蔵フォールバック",
+    "status": {
+      "pass": "合格",
+      "fail": "失敗",
+      "fallback": "フォールバック",
+      "info": "情報"
+    },
+    "check": {
+      "cacheRoot": "キャッシュルート",
+      "assetProtocol": "アセットプロトコル",
+      "pack": "リソースパック内容",
+      "replayMap": "このリプレイのマップ",
+      "shipModels": "艦船モデル",
+      "sessionFailures": "今回の読み込み失敗"
+    },
+    "checkHint": {
+      "cacheRoot": "「設定 → リソース」でリソースパックをダウンロードまたは修復してください。デスクトップのキャッシュルートは %LOCALAPPDATA%\\WoWSP です。",
+      "assetProtocol": "tauri.conf.json の assetProtocol.scope がキャッシュルート（$LOCALDATA/WoWSP/**）を対象にしているか確認するか、リソースパックを再インストールしてください。",
+      "pack": "リソースパックを再ダウンロードしてください（設定 → リソース）。",
+      "replayMap": "パックにこのマップの minimap/GLB がありません — リソースパックを再ダウンロードしてください。",
+      "shipModels": "不足モデルはリソースパックの再ダウンロードで補えます。内蔵フォールバックは正常な縮退です。",
+      "sessionFailures": "コンソールの [modelLoader] ログを確認し、パック修復後にリプレイ画面を開き直してください。"
+    }
   },
   "chatLog": "チャット記録",
   "chat": {
