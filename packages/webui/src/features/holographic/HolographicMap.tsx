@@ -113,6 +113,7 @@ import {
   exportShipCardVisible,
   type ShipLabelSpriteInput,
 } from "./exportShipLabels";
+import { adoptExportCameraLayers } from "./sceneUtils";
 import HoloExportModal from "./HoloExportModal";
 import {
   EXPORT_GOD_FOV_DEG,
@@ -4096,6 +4097,12 @@ const RECORDED_DOLLY_MIN = -40;
             : "#0b1220";
         g.fillRect(0, 0, EXPORT_LOGICAL, EXPORT_LOGICAL);
         if (!a || !scene || !renderer || !liveCamera) return false;
+        // Layer parity is re-asserted on every rendered frame, from the live
+        // camera this render is about to replace in the scene slot: the clip
+        // must draw the live view's visible set plus the export-only cards,
+        // whatever the live mask is at THIS frame. (The camera is also seeded
+        // at take start; this keeps that seed from ever going stale.)
+        adoptExportCameraLayers(camera, liveCamera, [EXPORT_LABEL_LAYER]);
         const gl = renderer.getContext();
         if (!gl || gl.isContextLost()) return false;
         // The default framebuffer is the limit for THIS render target (a
@@ -4287,8 +4294,28 @@ const RECORDED_DOLLY_MIN = -40;
         : null;
       // The take's in-scene label cards live on their OWN layer: only the
       // export camera ever enables it, so the live view's per-frame repaint
-      // (the export's restore path) can never show them.
-      godCamera?.layers.enable(EXPORT_LABEL_LAYER);
+      // (the export's restore path) can never show them. Everything ELSE the
+      // clip renders must be EXACTLY the live view's visible set, so the mask
+      // is COPIED from the live camera and extended with the export-only
+      // layers — never rebuilt from a hand-listed set of indices. A hand-list
+      // is the trap this closes: the moment a scene object moves to another
+      // layer (the hull models are one candidate), the clip keeps rendering
+      // terrain and cards while that class silently vanishes, with nothing
+      // in the code marking the omission. Copying means a future layer needs
+      // no export-side edit at all. `api.value` is the mounted scene; before
+      // it exists the 3D take cannot render (it falls back to the 2D painter),
+      // so reading the live camera here is always the scene's own.
+      const liveCamera = api.value?.camera;
+      if (godCamera) {
+        if (liveCamera) {
+          adoptExportCameraLayers(godCamera, liveCamera, [EXPORT_LABEL_LAYER]);
+        } else {
+          // No mounted scene (the 3D take falls back to the 2D painter): a
+          // fresh camera's default layer 0 plus the label layer is the same
+          // best-effort set the previous code installed.
+          godCamera.layers.enable(EXPORT_LABEL_LAYER);
+        }
+      }
       // 3D-render bail-out notice (at most one per take): a missing scene or
       // a lost context switches the take to the 2D painting, never a blank
       // square — say so once instead of silently mixing modes.
