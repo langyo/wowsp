@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import atexit
 import os
 import signal
 import subprocess
@@ -32,6 +33,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts" / "utils"))
@@ -45,6 +47,14 @@ MOCK_PORT = int(os.environ.get("WOWSP_MOCK_PORT", "8787"))
 # pinned in lockstep with packages/app/tauri/tauri.conf.json's devUrl and
 # packages/webui/vite.config.ts (src/devPort.contract.test.ts enforces it).
 VITE_PORT = 5199
+
+# Windows PowerShell writes its *redirected* stdout in the console codepage
+# (GBK/cp936 on the maintainer's host), so CJK paths came back mojibake
+# (`D:/Դ????/...`) even though the pipe is read as utf-8. Forcing the console
+# output encoding inside the session makes the producer match the consumer;
+# every powershell invocation that reads process metadata must prefix its
+# -Command with this (see _describe_pid_command).
+_PS_UTF8_PREFIX = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
 
 # Files whose changes tauri-cli does NOT watch but should trigger a full dev
 # restart. Source files (Rust + webui) are handled by tauri-cli's own watcher
@@ -65,6 +75,187 @@ WATCH_CONFIG_GLOBS = [
 ]
 
 
+# ── child-process lifecycle ───────────────────────────────────────────
+#
+# Kill-chain design: `taskkill /PID <pid> /T /F` per spawned child on Windows
+# (POSIX: process-group SIGTERM, then SIGKILL). taskkill is chosen over a
+# ctypes Job Object because it is dependency-free, is already this repo's
+# Windows primitive (`_kill_lingering_wowsp` and the old `_terminate`), and it
+# covers the actual failure mode: every child is spawned through shell=True,
+# so Popen.pid is a cmd.exe wrapper and ONLY a tree kill reaches
+# pnpm/Vite/cargo. A Job Object would additionally survive dev.py itself being
+# force-killed, but needs ctypes plumbing and one handle per child for a dev
+# script whose own orderly exit is the routine path.
+#
+# Regression: the maintainer's every-other-`just dev` failed with "something
+# is already listening on :5199". Run N spawned Vite, then left through a path
+# that did not kill it (Ctrl+C in the `webui` branch, a subprocess failure, an
+# exception before the cleanup join); the orphan held :5199 and run N+1's guard
+# refused. Every exit path now runs the tree kill, so the routine Ctrl+C no
+# longer orphans Vite. Known gaps, documented rather than papered over:
+# (a) no Python runs on a hard kill of dev.py itself (taskkill /F) or on a
+#     console-close (CTRL_CLOSE_EVENT) that pre-empts the handler;
+# (b) Ctrl+C reaches the whole console group at once, so if cmd.exe dies before
+#     our taskkill runs, /T has no tree root left to walk and a grandchild that
+#     ignored Ctrl+C is out of reach (taskkill on the recorded pid would be
+#     unsafe: PID reuse).
+# A ctypes Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE would close both
+# (the kernel kills the whole job when its last handle closes, even when dev.py
+# is hard-killed) and is the intended next step if a residual orphan is ever
+# observed; taskkill was chosen now to keep this dev script free of ctypes job
+# plumbing. Whatever the route, a child whose kill cannot be confirmed stays
+# tracked so a later atexit/signal pass can retry it.
+_LIVE_CHILDREN: dict[int, subprocess.Popen] = {}
+_LIVE_LOCK = threading.RLock()
+_CLEANUP_IN_PROGRESS = False
+_EXIT_HOOKS_INSTALLED = False
+
+
+def _track_child(proc: subprocess.Popen) -> None:
+    """Remember a spawned child so the exit hooks can tree-kill it."""
+    with _LIVE_LOCK:
+        for pid in [pid for pid, p in _LIVE_CHILDREN.items() if p.poll() is not None]:
+            _LIVE_CHILDREN.pop(pid, None)
+        _LIVE_CHILDREN[proc.pid] = proc
+
+
+def _untrack_child(proc: subprocess.Popen) -> None:
+    with _LIVE_LOCK:
+        _LIVE_CHILDREN.pop(proc.pid, None)
+
+
+def _kill_command(pid: str | int) -> str:
+    """Copy-pasteable one-liner that stops `pid` (with its tree on Windows)."""
+    if os.name == "nt":
+        return f"taskkill /PID {pid} /T /F"
+    return f"kill -TERM {pid}"
+
+
+def _proc_group(proc: subprocess.Popen) -> int | None:
+    """The child's process group when it leads its own session, else None.
+
+    `_run` starts POSIX children in a new session, so killpg reaches the whole
+    tree; a child that shares dev.py's own group must never be group-killed
+    (that would kill dev.py itself)."""
+    if os.name == "nt":
+        return None
+    try:
+        pgid = os.getpgid(proc.pid)
+        return pgid if pgid != os.getpgid(0) else None
+    except OSError:
+        return None
+
+
+def _terminate(proc: subprocess.Popen) -> bool:
+    """Tree-terminate one child: SIGTERM first, then SIGKILL on POSIX;
+    `taskkill /T /F` on Windows (no signal-based graceful stop reaches the
+    grandchildren of a shell-spawned process there). Idempotent, never raises.
+
+    Returns True once the child is confirmed gone and untracked; a kill that
+    cannot be confirmed leaves it tracked so the next atexit/signal cleanup
+    pass retries instead of silently dropping the tree."""
+    if proc.poll() is not None:
+        _untrack_child(proc)
+        return True
+    try:
+        if os.name == "nt":
+            # taskkill the tree so pnpm/Vite/cargo children don't linger.
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True,
+                timeout=10,
+            )
+        else:
+            pgid = _proc_group(proc)
+            if pgid is not None:
+                os.killpg(pgid, signal.SIGTERM)
+            else:
+                proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+            if pgid is not None:
+                # A descendant can outlive the group leader, so a clean leader
+                # exit must not end the cleanup; SIGKILL the whole group (a
+                # gone group raises ESRCH, which is fine).
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except OSError:
+                    pass
+            elif proc.poll() is None:
+                proc.kill()
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    finally:
+        try:
+            proc.wait(timeout=1)  # reap, don't leave a zombie on POSIX
+        except Exception:
+            pass
+    if proc.poll() is not None:
+        _untrack_child(proc)
+        return True
+    return False
+
+
+def _cleanup_children() -> None:
+    """Tree-kill every live child. Runs on atexit, on SIGINT/SIGBREAK/SIGTERM/
+    SIGHUP, and from the explicit shutdown paths. Never raises; reentrant-safe.
+
+    Untracking happens inside `_terminate` only on a confirmed kill, so a
+    failed or aborted pass (second Ctrl+C, taskkill timeout) leaves the
+    survivors in the registry for the next pass."""
+    global _CLEANUP_IN_PROGRESS
+    with _LIVE_LOCK:
+        if _CLEANUP_IN_PROGRESS:
+            return
+        _CLEANUP_IN_PROGRESS = True
+        procs = list(_LIVE_CHILDREN.values())
+    try:
+        for proc in procs:
+            _terminate(proc)
+    finally:
+        with _LIVE_LOCK:
+            _CLEANUP_IN_PROGRESS = False
+
+
+def _on_signal(signum: int, _frame) -> None:
+    """Kill the spawned trees BEFORE unwinding, so Ctrl+C cannot orphan Vite."""
+    try:
+        name = signal.Signals(signum).name
+    except ValueError:
+        name = str(signum)
+    try:
+        _log.warn(f"received {name} — stopping child process trees", module="dev")
+    except Exception:
+        pass  # logging must never be able to skip the cleanup below
+    _cleanup_children()
+    if signum in (getattr(signal, "SIGINT", None), getattr(signal, "SIGBREAK", None)):
+        raise KeyboardInterrupt
+    raise SystemExit(128 + signum)
+
+
+def _install_exit_hooks() -> None:
+    """Register the atexit + signal cleanup exactly once."""
+    global _EXIT_HOOKS_INSTALLED
+    if _EXIT_HOOKS_INSTALLED:
+        return
+    _EXIT_HOOKS_INSTALLED = True
+    atexit.register(_cleanup_children)
+    for name in ("SIGINT", "SIGBREAK", "SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _on_signal)
+        except (OSError, ValueError, RuntimeError):
+            # e.g. called from a non-main thread; atexit still covers us.
+            pass
+
+
 def _run(cmd: list[str], cwd: Path = ROOT, env: dict | None = None) -> subprocess.Popen:
     _log.info(f"$ {' '.join(cmd)}", module="spawn")
     # On Windows, `pnpm`/`pnpm.cmd` is a corepack shim that subprocess.Popen
@@ -72,12 +263,44 @@ def _run(cmd: list[str], cwd: Path = ROOT, env: dict | None = None) -> subproces
     # resolution for security). shell=True lets the OS resolve shims the same
     # way a terminal would. Commands here are all hardcoded literals, so the
     # shell-injection surface is nil.
-    return subprocess.Popen(
-        " ".join(cmd),
-        cwd=str(cwd),
-        env={**os.environ, **(env or {})},
-        shell=True,
-    )
+    #
+    # On POSIX the shell child leads its own session so the cleanup hooks can
+    # signal the whole tree with killpg instead of leaking node/cargo.
+    popen_kwargs: dict = {}
+    if os.name != "nt":
+        popen_kwargs["start_new_session"] = True
+    proc: subprocess.Popen | None = None
+    try:
+        proc = subprocess.Popen(
+            " ".join(cmd),
+            cwd=str(cwd),
+            env={**os.environ, **(env or {})},
+            shell=True,
+            **popen_kwargs,
+        )
+        _track_child(proc)
+        return proc
+    except BaseException:
+        # A signal handler can raise between Popen returning and the registry
+        # insert; the handler does not know this child yet, so kill it here
+        # before the exception unwinds.
+        if proc is not None:
+            _terminate(proc)
+        raise
+
+
+def _wait_proc(proc: subprocess.Popen, interval: float = 0.25) -> int | None:
+    """Wait for a child in short polls, never in one blocking `proc.wait()`.
+
+    This is what makes the Ctrl-C guarantee real: on Windows `Popen.wait()`
+    parks the main thread in WaitForSingleObject(INFINITE), which the console
+    SIGINT handler cannot interrupt, so the handler would only run after the
+    child exits — a pnpm/Vite tree that ignores Ctrl+C would then survive the
+    script and keep holding :5199. Polling lets the pending handler run within
+    one interval and tree-kill the still-live child."""
+    while proc.poll() is None:
+        time.sleep(interval)
+    return proc.returncode
 
 
 def _wait_port(port: int, timeout: float = 20.0) -> bool:
@@ -111,11 +334,31 @@ def start_mock(procs: list[subprocess.Popen]) -> None:
         _log.warn(f"mock backend did not bind :{MOCK_PORT} in time", module="mock")
 
 
-def _port_occupied_by(port: int) -> str | None:
-    """Return a human-readable hint about what listens on `port`, or None
-    when the port is free. Guards against the nasty failure where ANOTHER
-    project's dev server holds the port: `_wait_port` would then see it as
-    'Vite ready' and Tauri would load that foreign app in our window."""
+class _PortOwner(NamedTuple):
+    """Who holds a port: the netstat pid (None when netstat failed) plus a
+    best-effort identity suffix (", <command line>"), empty when unknown."""
+
+    pid: str | None
+    detail: str
+
+
+def _busy_port_message(port: int, owner: _PortOwner) -> str:
+    """The guard's headline, ending in a COPY-PASTEABLE kill one-liner with the
+    resolved pid (no placeholder the user has to fill in)."""
+    msg = f"something is already listening on :{port}"
+    if owner.pid:
+        msg += f" (pid {owner.pid}{owner.detail})"
+        msg += f". Stop that process tree with `{_kill_command(owner.pid)}`"
+    else:
+        msg += f". Find it with `netstat -ano | findstr :{port}`"
+    return msg
+
+
+def _port_occupied_by(port: int) -> _PortOwner | None:
+    """Return who listens on `port` (pid + best-effort identity), or None when
+    the port is free. Guards against the nasty failure where ANOTHER project's
+    dev server holds the port: `_wait_port` would then see it as 'Vite ready'
+    and Tauri would load that foreign app in our window."""
     import socket
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -132,12 +375,32 @@ def _port_occupied_by(port: int) -> str | None:
             # Vite typically binds 0.0.0.0, so an exact 127.0.0.1 comparison
             # would detect the conflict but lose the pid from the message.
             if len(parts) >= 5 and parts[1].endswith(f":{port}") and parts[3] == "LISTENING":
-                pid = parts[4]
-                break
+                # The pid is interpolated into a PowerShell -Command string
+                # and printed as a kill one-liner; refuse anything non-numeric.
+                if parts[4].isdigit():
+                    pid = parts[4]
+                    break
     except (OSError, subprocess.SubprocessError):
         pass
-    who = f" (pid {pid}{_describe_pid(pid)})" if pid else ""
-    return f"something is already listening on :{port}{who}"
+    if not pid:
+        return _PortOwner(None, "")
+    return _PortOwner(pid, _describe_pid(pid))
+
+
+def _describe_pid_command(pid: str) -> list[str]:
+    """PowerShell argv that reads a pid's command line as UTF-8 text.
+
+    The _PS_UTF8_PREFIX is mandatory: powershell.exe writes its redirected
+    stdout in the console codepage (GBK/cp936 on the maintainer's host), so a
+    CJK repo path (this repo lives under 源代码/工程项目/个人站点) came back as
+    `D:/Դ????/...` even though the pipe is read with encoding="utf-8". Forcing
+    [Console]::OutputEncoding makes the producer match the consumer."""
+    return [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        _PS_UTF8_PREFIX + f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine",
+    ]
 
 
 def _describe_pid(pid: str) -> str:
@@ -149,12 +412,7 @@ def _describe_pid(pid: str) -> str:
     try:
         if os.name == "nt":
             out = subprocess.run(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-Command",
-                    f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine",
-                ],
+                _describe_pid_command(pid),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -162,14 +420,18 @@ def _describe_pid(pid: str) -> str:
                 timeout=6,
             ).stdout.strip()
             if not out:
-                out = subprocess.run(
+                lines = subprocess.run(
                     ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
                     timeout=5,
-                ).stdout.strip().splitlines()[0]
+                ).stdout.strip().splitlines()
+                fallback = lines[0] if lines else ""
+                # tasklist answers a dead pid with "INFO: No tasks are running
+                # which match the specified criteria." — not an identity.
+                out = "" if fallback.startswith("INFO:") else fallback
             return f", {out[:160]}" if out else ""
         out = subprocess.run(
             ["ps", "-p", pid, "-o", "command="],
@@ -193,7 +455,8 @@ def _console_safe(text: str) -> str:
     UnicodeEncodeError traceback (the 2026-10-30 fix initially did exactly
     that). Encode/decode against the stream's own encoding, replacing what it
     cannot represent."""
-    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    stream = getattr(getattr(_log, "_default", None), "stream", None) or sys.stdout
+    encoding = getattr(stream, "encoding", None) or "utf-8"
     try:
         return text.encode(encoding, errors="replace").decode(encoding)
     except (LookupError, UnicodeError):
@@ -212,14 +475,15 @@ def _require_vite_port_free() -> None:
     offending pid/command before Tauri can open; Vite itself is also pinned with
     host 127.0.0.1 + strictPort so a fallback cannot happen even when the script
     is bypassed (`cargo tauri dev` directly)."""
-    occupied = _port_occupied_by(VITE_PORT)
-    if not occupied:
+    owner = _port_occupied_by(VITE_PORT)
+    if owner is None:
         return
     _log.error(
-        _console_safe(occupied) + ". This is NOT WoWSP's dev server — Tauri would load that "
-        "foreign app into the WoWSP window. Stop it (netstat -ano | findstr "
-        f":{VITE_PORT}) or move that project to its own dev port, then rerun "
-        "`just dev`.",
+        _console_safe(
+            _busy_port_message(VITE_PORT, owner) + ". This is NOT WoWSP's dev server — "
+            "Tauri would load that foreign app into the WoWSP window. Stop it, or move that "
+            "project to its own dev port, then rerun `just dev`."
+        ),
         module="vite",
     )
     raise SystemExit(1)
@@ -294,51 +558,33 @@ def run_with_watcher(cmd: list[str], env: dict | None = None) -> int:
     )
     watcher.start()
 
-    while not stop_event.is_set():
-        _log.info("starting dev subprocess (malkuth will graceful-drain on restart)", module="dev")
-        proc = _run(cmd, env=env)
-        # Wait for either: subprocess exit, config change, or Ctrl-C.
-        while proc.poll() is None:
-            if on_change.wait(0.5):
-                on_change.clear()
-                _log.warn("config changed → restarting dev subprocess", module="watch")
-                _terminate(proc)
-                break
-        if proc.poll() is None:
-            # We broke out via config change; loop to respawn.
-            continue
-        # Subprocess exited on its own.
-        rc = proc.returncode
-        if rc in (0, -2, 130):  # clean exit / Ctrl-C
-            break
-        _log.warn(f"dev subprocess exited ({rc}) — restarting in 1s", module="dev")
-        time.sleep(1.0)
-
-    stop_event.set()
-    return 0
-
-
-def _terminate(proc: subprocess.Popen) -> None:
-    """Politely terminate a subprocess: SIGTERM first, SIGKILL on Windows via
-    taskkill on the whole tree (Tauri spawns children)."""
-    if proc.poll() is not None:
-        return
+    proc: subprocess.Popen | None = None
     try:
-        if os.name == "nt":
-            # taskkill the tree so Vite/cargo children don't linger.
-            subprocess.run(
-                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                capture_output=True,
-                timeout=10,
-            )
-        else:
-            proc.send_signal(signal.SIGTERM)
-            proc.wait(timeout=10)
-    except Exception:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        while not stop_event.is_set():
+            _log.info("starting dev subprocess (malkuth will graceful-drain on restart)", module="dev")
+            proc = _run(cmd, env=env)
+            # Wait for either: subprocess exit, config change, or Ctrl-C.
+            while proc.poll() is None:
+                if on_change.wait(0.5):
+                    on_change.clear()
+                    _log.warn("config changed → restarting dev subprocess", module="watch")
+                    _terminate(proc)
+                    break
+            if proc.poll() is None:
+                # We broke out via config change; loop to respawn.
+                continue
+            # Subprocess exited on its own.
+            rc = proc.returncode
+            if rc in (0, -2, 130):  # clean exit / Ctrl-C
+                break
+            _log.warn(f"dev subprocess exited ({rc}) — restarting in 1s", module="dev")
+            time.sleep(1.0)
+    finally:
+        # Ctrl-C during the wait must not leave cargo/Vite behind.
+        stop_event.set()
+        if proc is not None:
+            _terminate(proc)
+    return 0
 
 
 def run_mock(args: argparse.Namespace) -> int:
@@ -348,13 +594,14 @@ def run_mock(args: argparse.Namespace) -> int:
         start_vite(procs, extra_env={"WOWSP_MOCK_URL": f"http://localhost:{MOCK_PORT}"})
         _log.info("WoWSP dev (mock) running — Ctrl-C to stop.", module="ready")
         for p in procs:
-            p.wait()
+            _wait_proc(p)
     except KeyboardInterrupt:
         _log.info("shutting down...", module="dev")
     finally:
+        # A finally-return here would swallow the port guard's SystemExit(1).
         for p in procs:
             _terminate(p)
-        return 0
+    return 0
 
 
 def _kill_lingering_wowsp() -> None:
@@ -389,6 +636,7 @@ def _sync_logo() -> None:
 
 
 def run_native(args: argparse.Namespace) -> int:
+    procs: list[subprocess.Popen] = []
     try:
         # Port isolation FIRST: a foreign dev server on :5199 makes Tauri load
         # ITS page into the WoWSP window (2026-10-30 incident). Fail before
@@ -403,35 +651,41 @@ def run_native(args: argparse.Namespace) -> int:
         _sync_logo()
 
         if args.webui_only:
-            procs: list[subprocess.Popen] = []
             # Browser-only session: no mock backend runs, so the webui's
             # transport must fail fast instead of fetching every RPC into a
             # dead proxy target (one ECONNREFUSED stack per call flooded the
             # dev terminal — 2026-11-07 report). `just dev mock` omits the
             # flag and serves the FastAPI backend as before.
             start_vite(procs, extra_env={"WOWSP_NO_BACKEND": "1"})
-            procs[0].wait()
+            _wait_proc(procs[0])
             return 0
         cmd = ["cargo", "tauri", "dev"]
         env = None
         if args.mock:
             # Run mock backend alongside, point Vite at it via env.
-            procs = []
             start_mock(procs)
             env = {"WOWSP_MOCK_URL": f"http://localhost:{MOCK_PORT}"}
         if args.watch:
-            rc = run_with_watcher(cmd, env=env)
-            return rc
+            return run_with_watcher(cmd, env=env)
         # Default: plain cargo tauri dev (tauri-cli's own watcher handles hot reload).
-        proc = _run(cmd, env=env)
-        proc.wait()
-        return proc.returncode or 0
+        procs.append(_run(cmd, env=env))
+        _wait_proc(procs[-1])
+        return procs[-1].returncode or 0
     except KeyboardInterrupt:
         _log.info("shutting down...", module="dev")
         return 0
+    finally:
+        # Every exit path (Ctrl-C in the webui branch above, a subprocess
+        # failure, any exception between spawn and join) tree-kills the
+        # children; atexit/signal hooks cover the paths that skip this frame.
+        for proc in procs:
+            _terminate(proc)
 
 
 def main() -> int:
+    # Cleanup must exist BEFORE the first spawn: Ctrl-C (or any exception)
+    # between spawn and an explicit join used to orphan Vite on :5199.
+    _install_exit_hooks()
     parser = argparse.ArgumentParser(description="WoWSP dev orchestrator")
     parser.add_argument("mode", nargs="?", default=None, help="(positional) 'webui' for browser-only")
     parser.add_argument("--mock", action="store_true", help="start the FastAPI mock backend")
