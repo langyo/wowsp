@@ -97,8 +97,20 @@
     }
   }
 
-  /* The water-table row look, verbatim proportions. */
+  /* The water-table row look, verbatim proportions. The scrolling host is
+     hikari's HkScrollContainer (the theme.scss scroll policy): the overlay
+     track draws the scroll chrome under the rows, desktop fits the viewport
+     untouched, and the phone block floors each row at one min-width so the
+     table pans inside the modal's bottom sheet. The row rhythm lives on
+     __list-inner so it scrolls with the rows; contained horizontal
+     overscroll keeps a pan that hits the end from chaining onto the sheet. */
   &__list {
+    & > .hk-scroll-container-viewport {
+      overscroll-behavior-x: contain;
+    }
+  }
+
+  &__list-inner {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -172,18 +184,16 @@
   }
 
   @media (max-width: 767px) {
-    /* Phones: let the row scroll horizontally instead of crushing the
-       name column to nothing. The min-width must clear the tracks' OWN
-       floor: 294px of columns + SEVEN 8px gaps (56px, not 48) + 12px
-       padding ≈ 362px — 22rem starved the flexing name to zero, and
-       26rem left it a bare 54px sliver. 28rem (448px) gives the ship
-       NAME — the row's primary identifier — a real ≈86px track while
-       still scrolling in place inside the modal's bottom sheet. */
-    &__list {
-      overflow-x: auto;
-    }
-
-    &__ship {
+    /* Phones: let the row pan horizontally inside the HkScrollContainer
+       viewport instead of crushing the name column to nothing. The
+       min-width must clear the tracks' OWN floor: 294px of columns +
+       SEVEN 8px gaps (56px, not 48) + 12px padding ≈ 362px — 22rem
+       starved the flexing name to zero, and 26rem left it a bare 54px
+       sliver. 28rem (448px) gives the ship NAME — the row's primary
+       identifier — a real ≈86px track while still scrolling in place
+       inside the modal's bottom sheet. The floor parks on __list-inner so
+       every row stretches to that one track width. */
+    &__list-inner {
       min-width: 28rem;
     }
 

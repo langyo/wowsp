@@ -27,14 +27,22 @@
   }
 }
 
+/* The error/loading body rides hikari's HkScrollContainer (the theme.scss
+   scroll policy): the container root keeps the flex slot and the scroll cap,
+   the shared overlay track draws the scroll chrome, and the reading inset +
+   centering move onto the inner frame. The frame fills the viewport
+   (min-height: 100%) so a fitting card centers and a tall one scrolls. */
 .wowsp-report-modal__body {
   flex: 1;
   min-height: 0;
+}
+
+.wowsp-report-modal__inner {
+  min-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  overflow: auto;
 }
 
 .wowsp-report-modal__loading {

@@ -475,14 +475,40 @@
   }
 }
 
+/* ── Version trend chart: hikari's HkScrollContainer owns the pan ───────
+   The bar chart is intrinsically horizontal (one 30px-min column per game
+   version), so the container ROOT keeps the fixed 140px frame and its
+   surface, the viewport carries the frame padding, and the row rhythm lives
+   on __row INSIDE the viewport (theme.scss scroll policy: the platform bar
+   never paints — hikari's auto-hiding overlay track is the one chrome, and
+   touch/wheel pans ride the viewport natively). */
 .trend-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.4rem;
   height: 140px;
-  padding: 0.5rem;
   background: rgb(var(--color-bg));
   border-radius: var(--radius-sm);
+
+  /* The frame's inset belongs to the scroll surface: the pre-migration chart
+     WAS the scroller, so the first column's breathing room and the pan
+     origin sit on the viewport (a root padding would inset the scrollport
+     itself and shift the surface). Horizontal overscroll containment keeps
+     a pan past the newest version from chaining into the modal body. */
+  & > .hk-scroll-container-viewport {
+    padding: 0.5rem;
+    overscroll-behavior-x: contain;
+  }
+
+  /* The pre-migration flex line, now the viewport's only content: a
+     block-level row already spans the strip's inner width, its columns
+     share the free width (flex: 1) and shrink no further than the
+     30px/26px floors. Once those floors exceed the inner width the flex
+     line overflows the row and the viewport pans, so the older versions
+     stay reachable instead of being clipped. */
+  &__row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.4rem;
+    height: 100%;
+  }
 
   &__col {
     flex: 1;
@@ -700,21 +726,20 @@
 /* ── Phone layout (≤767px) ─────────────────────────────────────────────────
    The detail modal docks as a bottom sheet (hikari): full width, body inner
    padding 1rem, and .hk-modal-body-scroll hides horizontal overflow —
-   anything wider than the sheet is CLIPPED, never scrollable. Two phone
-   retunes:
+   anything wider than the sheet is CLIPPED, except the strips that
+   deliberately pan in an HkScrollContainer (TrendBars below, the build
+   planner's chains). Two phone retunes:
    - TrendBars is an intrinsically horizontal chart (one 30px-min column per
-     game version; a 15-version history runs ~540px). It scrolls in place
-     with slightly slimmer columns instead of losing its right half.
+     game version; a 15-version history runs ~540px). Its HkScrollContainer
+     viewport pans the strip in place with slightly slimmer columns instead
+     of losing its right half — no native bar, the overlay track is the
+     chrome.
    - The alternate-firing toggle sits in a shell-section head sized for a
      mouse (23×13px track, text-2xs label); the whole label grows a touch
      envelope so the switch is tappable with a thumb. */
 @media (max-width: 767px) {
-  .trend-bars {
-    overflow-x: auto;
-
-    &__col {
-      min-width: 26px;
-    }
+  .trend-bars__col {
+    min-width: 26px;
   }
 
   .specs-alt {

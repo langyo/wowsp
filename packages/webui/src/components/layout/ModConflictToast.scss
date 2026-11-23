@@ -10,12 +10,20 @@
   gap: var(--space-12);
 }
 
+// The capped problem list is hikari's HkScrollContainer (the theme.scss
+// scroll policy): the native bar never paints, the shared overlay track
+// draws the scroll chrome, and the capped height parks on the container
+// root while the rows scroll inside its viewport.
 .mod-conflict-modal__list {
+  max-height: 50vh;
+}
+
+// Row rhythm lives INSIDE the viewport, the way hikari's own scroll hosts
+// keep their layout rules off the container root.
+.mod-conflict-modal__rows {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-  max-height: 50vh;
-  overflow: auto;
 }
 
 .mod-conflict-modal__problem {

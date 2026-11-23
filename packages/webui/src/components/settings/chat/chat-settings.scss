@@ -130,28 +130,38 @@
   color: rgb(var(--color-text));
 }
 
+/* Both result scrollers ride hikari's HkScrollContainer (the theme.scss
+   scroll policy): the shared overlay track draws the scroll chrome, the
+   14rem cap stays on each container root, and the reading inset moves onto
+   the viewport so the content scrolls under the cap's edge, not the box
+   frame. */
 .chat-settings__test-json {
   max-height: 14rem;
-  overflow: auto;
   border-radius: var(--radius-sm, 6px);
   background: rgb(var(--color-border) / 10%);
-  padding: 0.4rem 0.55rem;
+
+  & > .hk-scroll-container-viewport {
+    padding: 0.4rem 0.55rem;
+  }
 }
 
-/* The system prompt / raw answer block: verbatim text, wrapped, capped. */
+/* The system prompt / raw answer block: verbatim text, wrapped, capped.
+   The container root keeps the cap and the painted frame; the verbatim
+   typography rides the viewport, where the text actually renders. */
 .chat-settings__test-prompt {
-  margin: 0;
   max-height: 14rem;
-  overflow: auto;
-  padding: 0.4rem 0.55rem;
   border-radius: var(--radius-sm, 6px);
   background: rgb(var(--color-border) / 10%);
-  color: rgb(var(--color-muted));
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+
+  & > .hk-scroll-container-viewport {
+    padding: 0.4rem 0.55rem;
+    color: rgb(var(--color-muted));
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 }
 
 /* The test window's failure sentence (the shell's display text wrapped in the

@@ -266,11 +266,21 @@
   line-height: 1.5;
 }
 
+// The capture strip is hikari's HkScrollContainer (the theme.scss scroll
+// policy): the overlay track draws the scroll chrome under the row, and the
+// row rhythm lives on __row-inner INSIDE its viewport so the tiles scroll
+// with it. Contained horizontal overscroll keeps a pan that hits the strip's
+// end from chaining onto the modal body.
 .ml-shots__row {
+  & > .hk-scroll-container-viewport {
+    overscroll-behavior-x: contain;
+  }
+}
+
+.ml-shots__row-inner {
   display: flex;
   align-items: center;
   gap: 6px;
-  overflow-x: auto;
   padding-bottom: 2px;
 }
 

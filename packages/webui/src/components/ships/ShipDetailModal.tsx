@@ -2,7 +2,7 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, LifeBuoy, HelpCircle, Radar, BatteryCharging } from "@lucide/vue";
 
-import { HAlert, HkButton, HkMasonry, HkModal, HkPopupSelect, HkTabs, useToast } from "@celestia-island/hikari";
+import { HAlert, HkButton, HkMasonry, HkModal, HkPopupSelect, HkScrollContainer, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -1031,28 +1031,34 @@ const TrendBars = defineComponent({
       const minWr = Math.min(...props.buckets.map((b) => b.winrateAvg), 40);
       const range = Math.max(maxWr - minWr, 1);
       return (
-        <div class="trend-bars">
-          {props.buckets.map((b) => {
-            const heightPct = 20 + (80 * (b.winrateAvg - minWr)) / range;
-            const patch = props.patches.find((p) => p.version === b.version);
-            return (
-              <div class="trend-bars__col">
-                {patch ? (
-                  <span class="trend-bars__patch" data-hint={patch.summary}><Sparkles size={12} /></span>
-                ) : null}
-                <div
-                  class="trend-bars__bar"
-                  style={{
-                    height: `${heightPct}%`,
-                    background: winrateColor(b.winrateAvg),
-                  }}
-                  data-hint={`${b.version}: ${b.winrateAvg.toFixed(1)}% WR, ${b.avgDamage.toFixed(0)} avg dmg (${b.snapshotCount} snapshots)`}
-                />
-                <span class="trend-bars__label">{b.version}</span>
-              </div>
-            );
-          })}
-        </div>
+        /* The chart is an intrinsically horizontal strip (one 30px-min column
+           per game version — a long version history runs ~540px), so hikari's
+           HkScrollContainer owns the pan and the overlay bar; the row rhythm
+           and the slim phone column floor live INSIDE its viewport. */
+        <HkScrollContainer class="trend-bars" axis="horizontal">
+          <div class="trend-bars__row">
+            {props.buckets.map((b) => {
+              const heightPct = 20 + (80 * (b.winrateAvg - minWr)) / range;
+              const patch = props.patches.find((p) => p.version === b.version);
+              return (
+                <div class="trend-bars__col">
+                  {patch ? (
+                    <span class="trend-bars__patch" data-hint={patch.summary}><Sparkles size={12} /></span>
+                  ) : null}
+                  <div
+                    class="trend-bars__bar"
+                    style={{
+                      height: `${heightPct}%`,
+                      background: winrateColor(b.winrateAvg),
+                    }}
+                    data-hint={`${b.version}: ${b.winrateAvg.toFixed(1)}% WR, ${b.avgDamage.toFixed(0)} avg dmg (${b.snapshotCount} snapshots)`}
+                  />
+                  <span class="trend-bars__label">{b.version}</span>
+                </div>
+              );
+            })}
+          </div>
+        </HkScrollContainer>
       );
     };
   },

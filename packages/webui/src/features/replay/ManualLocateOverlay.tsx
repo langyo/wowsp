@@ -73,6 +73,7 @@ import {
   HkButton,
   HkModal,
   HkNumberInput,
+  HkScrollContainer,
   HkSpinner,
   useToast,
 } from "@celestia-island/hikari";
@@ -899,48 +900,54 @@ export default defineComponent({
           {!loading.value ? (
             <div class="ml-shots">
               <span class="ml-shots__label">{t("replay.live.manualShotPick")}</span>
-              <div class="ml-shots__row">
-                {gallery.value.map((f) => (
-                  <button
-                    key={f.atMs}
-                    type="button"
-                    class={[
-                      "ml-shot ml-shot--thumb",
-                      {
-                        "ml-shot--on":
-                          activeSource.value?.kind === "frame" &&
-                          activeSource.value.atMs === f.atMs,
-                      },
-                    ]}
-                    data-hint={ageLabelOf(f.atMs)}
-                    aria-label={ageLabelOf(f.atMs)}
-                    onClick={() => void load({ kind: "frame", atMs: f.atMs })}
+              {/* The capture strip is hikari's HkScrollContainer (the
+                  theme.scss scroll policy): the native bar never paints and
+                  the shared overlay track draws the scroll chrome; the row
+                  rhythm lives on __row-inner inside its viewport. */}
+              <HkScrollContainer class="ml-shots__row" axis="horizontal">
+                <div class="ml-shots__row-inner">
+                  {gallery.value.map((f) => (
+                    <button
+                      key={f.atMs}
+                      type="button"
+                      class={[
+                        "ml-shot ml-shot--thumb",
+                        {
+                          "ml-shot--on":
+                            activeSource.value?.kind === "frame" &&
+                            activeSource.value.atMs === f.atMs,
+                        },
+                      ]}
+                      data-hint={ageLabelOf(f.atMs)}
+                      aria-label={ageLabelOf(f.atMs)}
+                      onClick={() => void load({ kind: "frame", atMs: f.atMs })}
+                    >
+                      <img
+                        src={`data:image/png;base64,${f.imageBase64}`}
+                        alt=""
+                        draggable={false}
+                      />
+                    </button>
+                  ))}
+                  {customThumbSrc.value ? (
+                    <span class="ml-shot ml-shot--thumb ml-shot--on">
+                      <img src={customThumbSrc.value} alt="" draggable={false} />
+                    </span>
+                  ) : null}
+                  <HkButton size="sm" variant="secondary" onClick={() => void pasteImage()}>
+                    <Copy size={13} />
+                    {t("replay.live.manualShotPaste")}
+                  </HkButton>
+                  <HkButton
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => fileInput.value?.click()}
                   >
-                    <img
-                      src={`data:image/png;base64,${f.imageBase64}`}
-                      alt=""
-                      draggable={false}
-                    />
-                  </button>
-                ))}
-                {customThumbSrc.value ? (
-                  <span class="ml-shot ml-shot--thumb ml-shot--on">
-                    <img src={customThumbSrc.value} alt="" draggable={false} />
-                  </span>
-                ) : null}
-                <HkButton size="sm" variant="secondary" onClick={() => void pasteImage()}>
-                  <Copy size={13} />
-                  {t("replay.live.manualShotPaste")}
-                </HkButton>
-                <HkButton
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => fileInput.value?.click()}
-                >
-                  <FileImage size={13} />
-                  {t("replay.live.manualShotFile")}
-                </HkButton>
-              </div>
+                    <FileImage size={13} />
+                    {t("replay.live.manualShotFile")}
+                  </HkButton>
+                </div>
+              </HkScrollContainer>
               <input
                 ref={fileInput}
                 type="file"

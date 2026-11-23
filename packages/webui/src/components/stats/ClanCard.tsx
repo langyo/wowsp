@@ -12,7 +12,7 @@
  */
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 
-import { HkTag } from "@celestia-island/hikari";
+import { HkScrollContainer, HkTag } from "@celestia-island/hikari";
 import { ArrowDown, ArrowUp } from "@lucide/vue";
 
 import IdentityHead from "@/components/stats/IdentityHead";
@@ -252,7 +252,13 @@ export default defineComponent({
           ))}
         </div>
 
-        <div
+        {/* The roster is hikari's HkScrollContainer (the theme.scss
+            scroll policy): the overlay track draws the scroll chrome under
+            the table, desktop keeps its grid stretched to the card, and the
+            phone block floors head and rows at one min-width so the roster
+            pans inside the card. */}
+        <HkScrollContainer
+          axis="horizontal"
           class={[
             "clan-card__roster",
             // The PR column hides with the rating (the pref's master switch
@@ -261,91 +267,93 @@ export default defineComponent({
             prefs.prefs.prEnabled ? "" : "clan-card__roster--no-pr",
           ]}
         >
-          <div class="clan-card__roster-title">{t("lookup.clanMembers")}</div>
-          <div class="clan-card__roster-head">
-            <span class="clan-card__col clan-card__col--name">{t("lookup.memberName")}</span>
-            <span class="clan-card__col clan-card__col--role">{t("lookup.roleLabel")}</span>
-            {headCell("battles", t("stats.battles"))}
-            {headCell("winrate", t("stats.winrate"))}
-            {prefs.prefs.prEnabled ? headCell("pr", t("stats.pr")) : null}
-            {headCell("avgDamage", t("stats.avgDamage"))}
-          </div>
-          {members.value.map((m) => {
-            const memberPrTier = prTier(m.stats.pr);
-            // A player surface: right-click opens the shared marker/context
-            // menu (the app-global binding resolves the data-player-* attrs).
-            return (
-              <button
-                key={m.accountId}
-                type="button"
-                class={[
-                  "clan-card__member",
-                  m.stats.hidden ? "clan-card__member--hidden" : "",
-                ]}
-                onClick={() => props.onMemberClick?.(m)}
-                data-player-name={m.name}
-                data-player-account={String(m.accountId)}
-                data-player-realm={props.clan.realm}
-                data-hint={
-                  props.onMemberClick
-                    ? `${t("account.nickname")}: ${m.name}`
-                    : undefined
-                }
-              >
-                {(() => {
-                  const tint = markers.colorOf(m.name, m.accountId);
-                  return (
-                    <span
-                      class={[
-                        "clan-card__col",
-                        "clan-card__col--name",
-                        markerTintClass(tint),
-                      ]}
-                      data-hint={tint ? markerColorLabel(tint) : undefined}
-                    >
-                      {m.name}
-                    </span>
-                  );
-                })()}
-                <span class="clan-card__col clan-card__col--role">{roleLabel(m.role)}</span>
-                <span class="clan-card__col clan-card__col--num">
-                  {m.stats.battles != null ? m.stats.battles.toLocaleString() : "—"}
-                </span>
-                <span
-                  class="clan-card__col clan-card__col--num"
-                  style={
-                    m.stats.winrate != null
-                      ? { color: winrateColor(m.stats.winrate), fontWeight: 600 }
+          <div class="clan-card__roster-inner">
+            <div class="clan-card__roster-title">{t("lookup.clanMembers")}</div>
+            <div class="clan-card__roster-head">
+              <span class="clan-card__col clan-card__col--name">{t("lookup.memberName")}</span>
+              <span class="clan-card__col clan-card__col--role">{t("lookup.roleLabel")}</span>
+              {headCell("battles", t("stats.battles"))}
+              {headCell("winrate", t("stats.winrate"))}
+              {prefs.prefs.prEnabled ? headCell("pr", t("stats.pr")) : null}
+              {headCell("avgDamage", t("stats.avgDamage"))}
+            </div>
+            {members.value.map((m) => {
+              const memberPrTier = prTier(m.stats.pr);
+              // A player surface: right-click opens the shared marker/context
+              // menu (the app-global binding resolves the data-player-* attrs).
+              return (
+                <button
+                  key={m.accountId}
+                  type="button"
+                  class={[
+                    "clan-card__member",
+                    m.stats.hidden ? "clan-card__member--hidden" : "",
+                  ]}
+                  onClick={() => props.onMemberClick?.(m)}
+                  data-player-name={m.name}
+                  data-player-account={String(m.accountId)}
+                  data-player-realm={props.clan.realm}
+                  data-hint={
+                    props.onMemberClick
+                      ? `${t("account.nickname")}: ${m.name}`
                       : undefined
                   }
                 >
-                  {m.stats.winrate != null ? `${m.stats.winrate.toFixed(1)}%` : "—"}
-                </span>
-                {prefs.prefs.prEnabled ? (
+                  {(() => {
+                    const tint = markers.colorOf(m.name, m.accountId);
+                    return (
+                      <span
+                        class={[
+                          "clan-card__col",
+                          "clan-card__col--name",
+                          markerTintClass(tint),
+                        ]}
+                        data-hint={tint ? markerColorLabel(tint) : undefined}
+                      >
+                        {m.name}
+                      </span>
+                    );
+                  })()}
+                  <span class="clan-card__col clan-card__col--role">{roleLabel(m.role)}</span>
+                  <span class="clan-card__col clan-card__col--num">
+                    {m.stats.battles != null ? m.stats.battles.toLocaleString() : "—"}
+                  </span>
                   <span
-                    class={[
-                      "clan-card__col",
-                      "clan-card__col--num",
-                      memberPrTier.rainbow ? "rainbow-text" : null,
-                    ]}
+                    class="clan-card__col clan-card__col--num"
                     style={
-                      m.stats.pr != null && !memberPrTier.rainbow
-                        ? { color: memberPrTier.color, fontWeight: 600 }
+                      m.stats.winrate != null
+                        ? { color: winrateColor(m.stats.winrate), fontWeight: 600 }
                         : undefined
                     }
                   >
-                    {m.stats.pr != null ? m.stats.pr.toLocaleString() : "—"}
+                    {m.stats.winrate != null ? `${m.stats.winrate.toFixed(1)}%` : "—"}
                   </span>
-                ) : null}
-                <span class="clan-card__col clan-card__col--num">
-                  {m.stats.avgDamage != null
-                    ? Math.round(m.stats.avgDamage).toLocaleString()
-                    : "—"}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  {prefs.prefs.prEnabled ? (
+                    <span
+                      class={[
+                        "clan-card__col",
+                        "clan-card__col--num",
+                        memberPrTier.rainbow ? "rainbow-text" : null,
+                      ]}
+                      style={
+                        m.stats.pr != null && !memberPrTier.rainbow
+                          ? { color: memberPrTier.color, fontWeight: 600 }
+                          : undefined
+                      }
+                    >
+                      {m.stats.pr != null ? m.stats.pr.toLocaleString() : "—"}
+                    </span>
+                  ) : null}
+                  <span class="clan-card__col clan-card__col--num">
+                    {m.stats.avgDamage != null
+                      ? Math.round(m.stats.avgDamage).toLocaleString()
+                      : "—"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </HkScrollContainer>
       </div>
     );
   },

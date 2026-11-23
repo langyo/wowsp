@@ -103,15 +103,22 @@
   }
 
   /* ── State hero ────────────────────────────────────────────────────────
-     Owns the body until the first pushed frame. margin:auto centers the
-     card in the leftover space; when the viewport is too short the card
-     scrolls (the wrapper's overflow) instead of squashing. */
+     Owns the body until the first pushed frame. The region is hikari's
+     HkScrollContainer (the theme.scss scroll policy): the native bar never
+     paints, the shared overlay track draws the scroll chrome, and the
+     leftover-height cap parks on the container root while the hero scrolls
+     inside its viewport. __waiting-inner fills that viewport so the hero's
+     margin:auto still centers the card in the leftover space; when the
+     viewport is too short the card scrolls instead of squashing. */
   &__waiting {
     flex: 1;
     min-height: 0;
+  }
+
+  &__waiting-inner {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    min-height: 100%;
   }
 
   &__hero {
@@ -240,8 +247,8 @@
 }
 
 /* Short viewports (landscape phones): tighten the hero so the CTA stays on
-   the first screen where possible — the wrapper scrolls only as a last
-   resort (see __waiting). */
+   the first screen where possible — the waiting region scrolls only as a
+   last resort (see __waiting). */
 @media (max-height: 480px) {
   .gateway-live {
     &__hero {

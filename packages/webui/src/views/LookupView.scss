@@ -302,7 +302,20 @@
   font-size: var(--text-sm);
 }
 
+/* Ship table — hikari's HkScrollContainer owns the scrollbar (auto-hiding
+   overlay track along the table's bottom edge); the column rhythm moved to
+   __shiplist-inner so it scrolls with the rows. The table itself stays a
+   set of rows inside the viewport: desktop fits the viewport untouched,
+   the phone block below floors head and rows at one min-width so they
+   overflow it together. Contained horizontal overscroll keeps a pan that
+   hits the table's end from chaining onto the page's own scroll. */
 .lookup-view__shiplist {
+  & > .hk-scroll-container-viewport {
+    overscroll-behavior-x: contain;
+  }
+}
+
+.lookup-view__shiplist-inner {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -512,20 +525,18 @@
 
   /* Ship table — a TRUE table (icon/type/tier/name + four number columns
      + date capsule): the fixed tracks alone outwidth a 393px viewport, so
-     the list scrolls IN PLACE instead of exploding the card column. Head
-     and rows share one min-width so the captions stay over their columns,
-     and rows grow touch-height — every row opens the ship detail modal.
-     The min-width must clear the tracks' OWN floor with room left for the
-     name: leads 22+28+28 + numbers 56+56+76+44 + the fixed 80px date
-     track + eight 8px gaps + 12px padding ≈ 468px, so anything below
-     that (the first pass used 28rem = 448px) leaves the flexing name
-     column at ZERO width — 35rem (560px) restores a ≈92px name track. */
-  .lookup-view__shiplist {
-    overflow-x: auto;
-  }
-
-  .lookup-view__shiplist-head,
-  .lookup-view__ship {
+     the table scrolls IN PLACE inside its HkScrollContainer viewport
+     instead of exploding the card column. Head and rows ride one shared
+     track width so the captions stay over their columns, and rows grow
+     touch-height — every row opens the ship detail modal. The min-width
+     must clear the tracks' OWN floor with room left for the name: leads
+     22+28+28 + numbers 56+56+76+44 + the fixed 80px date track + eight
+     8px gaps + 12px padding ≈ 468px, so anything below that (the first
+     pass used 28rem = 448px) leaves the flexing name column at ZERO
+     width — 35rem (560px) restores a ≈92px name track. The floor parks on
+     __shiplist-inner, so head and rows stretch to that one track width and
+     the table pans inside the container's viewport. */
+  .lookup-view__shiplist-inner {
     min-width: 35rem;
   }
 

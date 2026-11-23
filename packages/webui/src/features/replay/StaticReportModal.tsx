@@ -1,6 +1,6 @@
 import { defineComponent, ref, type PropType } from "vue";
 import { Camera } from "@lucide/vue";
-import { HkButton, HkModal, HkSpinner } from "@celestia-island/hikari";
+import { HkButton, HkModal, HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import type { StaticReport } from "@/api";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -134,13 +134,20 @@ export default defineComponent({
               : undefined,
           default: () => {
             if (props.error) {
+              /* The error/loading body rides hikari's HkScrollContainer (the
+                 theme.scss scroll policy): the container root keeps the flex
+                 slot, the shared overlay track draws the scroll chrome, and
+                 the inner frame fills the viewport (min-height: 100%) so a
+                 fitting card centers while a tall one scrolls. */
               return (
-                <div class="wowsp-report-modal__body">
-                  <ErrorCard
-                    title={t("replay.report.title")}
-                    error={props.error ?? ""}
-                  />
-                </div>
+                <HkScrollContainer class="wowsp-report-modal__body">
+                  <div class="wowsp-report-modal__inner">
+                    <ErrorCard
+                      title={t("replay.report.title")}
+                      error={props.error ?? ""}
+                    />
+                  </div>
+                </HkScrollContainer>
               );
             }
             if (props.report) {
@@ -155,10 +162,12 @@ export default defineComponent({
               );
             }
             return (
-              <div class="wowsp-report-modal__body wowsp-report-modal__loading">
-                <HkSpinner size="md" tone="current" />
-                <span>{t("replay.report.loading")}</span>
-              </div>
+              <HkScrollContainer class="wowsp-report-modal__body">
+                <div class="wowsp-report-modal__inner wowsp-report-modal__loading">
+                  <HkSpinner size="md" tone="current" />
+                  <span>{t("replay.report.loading")}</span>
+                </div>
+              </HkScrollContainer>
             );
           },
         }}

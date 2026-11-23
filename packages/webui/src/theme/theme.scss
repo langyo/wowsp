@@ -525,7 +525,10 @@ button {
    former thin-native-bar exception for them is gone). Textareas keep
    the OS bar (native input chrome, not content-scroll chrome), and the
    document-level scroller of the marketing website (a separate package)
-   is out of this app's contract. */
+   is out of this app's contract. The "no platform bar" half is enforced
+   mechanically by theme/hikariScrollContract.styles.test.ts — a new native
+   overflow declaration (or WebKit bar styling) in any app sheet under src
+   fails that suite unless it carries the sanctioned suppression pair. */
 
 /* === Styled form controls (replace native select/input appearance) === */
 select {

@@ -594,38 +594,44 @@ export function renderLayerReport(ctx: ResourcesCtx) {
               {t("resources.layers.report.noConflicts")}
             </p>
           ) : (
-            <div class="layer-report__paths">
-              {rows.map((row) => (
-                <div class="layer-report__path" key={row.path}>
-                  <code class="layer-report__path-name">{row.path}</code>
-                  <span class="layer-report__path-meta">
-                    {row.foreign && (
-                      <AppTag tone="danger">
-                        {t("resources.layers.report.foreign")}
-                      </AppTag>
-                    )}
-                    {row.packId && (
-                      <AppTag tone="primary">{nameOf(row.packId)}</AppTag>
-                    )}
-                    {row.shadowed.length > 0 && (
-                      <AppTag tone="warning">
-                        {t("resources.layers.shadowed", {
-                          count: row.shadowed.length,
-                        })}
-                      </AppTag>
-                    )}
-                  </span>
-                </div>
-              ))}
-              {total > rows.length && (
-                <p class="layer-report__cap">
-                  {t("resources.layers.report.capped", {
-                    shown: rows.length,
-                    total,
-                  })}
-                </p>
-              )}
-            </div>
+            /* The capped path list rides hikari's HkScrollContainer (the
+               theme.scss scroll policy): the shared overlay track draws the
+               scroll chrome, the 18rem cap stays on the container root, and
+               the rows scroll inside its viewport. */
+            <HkScrollContainer class="layer-report__paths">
+              <div class="layer-report__paths-inner">
+                {rows.map((row) => (
+                  <div class="layer-report__path" key={row.path}>
+                    <code class="layer-report__path-name">{row.path}</code>
+                    <span class="layer-report__path-meta">
+                      {row.foreign && (
+                        <AppTag tone="danger">
+                          {t("resources.layers.report.foreign")}
+                        </AppTag>
+                      )}
+                      {row.packId && (
+                        <AppTag tone="primary">{nameOf(row.packId)}</AppTag>
+                      )}
+                      {row.shadowed.length > 0 && (
+                        <AppTag tone="warning">
+                          {t("resources.layers.shadowed", {
+                            count: row.shadowed.length,
+                          })}
+                        </AppTag>
+                      )}
+                    </span>
+                  </div>
+                ))}
+                {total > rows.length && (
+                  <p class="layer-report__cap">
+                    {t("resources.layers.report.capped", {
+                      shown: rows.length,
+                      total,
+                    })}
+                  </p>
+                )}
+              </div>
+            </HkScrollContainer>
           )}
         </div>
       </div>
