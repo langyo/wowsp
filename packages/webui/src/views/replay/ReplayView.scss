@@ -1,18 +1,13 @@
 .replay-view {
-  display: flex;
+  /* Page wrapper only: it hands HkMasterDetail a definite height (the
+     component's root is `height: 100%`) and owns nothing else — the two
+     columns' geometry (the 320px flush roster track, its hairline and
+     surface tint, the chrome-less detail region, each column's own
+     scroller) is the component's. The shell's page wrapper already gives a
+     definite height (`height: 100%`), so this level only has to pass it
+     through. */
   height: 100%;
   min-height: 0;
-
-  &__list {
-    width: 320px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid rgb(var(--color-border) / 20%);
-    background: rgb(var(--color-surface));
-    background: rgb(var(--color-surface) / min(100%, calc(50% + 50% * var(--ui-opacity, 1))));
-    overflow: hidden;
-  }
 
   &__list-head {
     flex-shrink: 0;
@@ -254,35 +249,6 @@
     /* The button fills the list item; external entries absolutely position
        their ✕ against the item, so it needs to be the containing block. */
     position: relative;
-  }
-
-  &__main {
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    /* No right padding at the column level: the live roster (the column's
-       scroller) keeps its overlay scrollbar floating at the window's right
-       edge across the full height (same pattern as LookupView/ShipsView).
-       Breathing room rides on the non-scrolling children instead. */
-    padding: 1.25rem 0 1.25rem 1.5rem;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  /* Phone-only page scroller scaffolding (≤767px the stacked detail
-     scrolls inside the container). On desktop nothing overflows it — the
-     roster/map keep managing their own scroll — and the flex/min-height
-     chain keeps the column's former geometry through the wrappers. */
-  &__main-scroll {
-    flex: 1;
-    min-height: 0;
-  }
-
-  &__main-inner {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
   }
 
   /* One row, one alignment: every meta item — map tag, date, mode/count
@@ -670,14 +636,9 @@
     font-size: var(--text-md);
   }
 
-  /* Keep the column's right gutter on the non-scrolling top-level states.
-     Scoped to the scroll wrapper's direct children (the placeholders the
-     view renders top-level): placeholders nested inside __content must not
-     stack the gutter twice. */
-  &__main-inner > &__placeholder {
-    padding-right: 1.5rem;
-  }
-
+  /* The detail region's inset is the component's own (its detail body
+     carries the family padding), so neither the content nor the top-level
+     placeholders carry a gutter of their own any more. */
   &__content {
     flex: 1;
     display: flex;
@@ -685,9 +646,6 @@
     gap: 1rem;
     min-height: 0;
     position: relative;
-    /* This state never scrolls, so it carries the column's right gutter
-       here (the live roster scroller owns the window edge instead). */
-    padding-right: 1.5rem;
   }
 
   /* The reveal shortcut — the meta row's last inline item (it used to
@@ -912,57 +870,30 @@
 }
 
 /* ── Phone layout (≤767px) ─────────────────────────────────────────────
-   The two-column app shell collapses: the replay list stacks above the
-   detail (own capped scroller) and the custom in-view overlays
-   (results / chat / post-battle drill-downs — plain fixed divs, NOT
-   hikari modals) dock as bottom sheets to match what HModal gives the
-   rest of the app for free: full-width, rounded top corners, slide-up
-   entry, backdrop, max-height under the title bar (--app-titlebar-h,
-   see AppTitleBar.scss) + 2.25rem breathing room, safe-area padded.
-   Desktop rules above are untouched. */
+   HkMasterDetail's narrow split owns the page here: the roster takes the
+   whole width and the detail rides its window form (the family docked
+   sheet, backGuard included). The overlay windows (results / chat /
+   post-battle drill-downs) dock as the same bottom sheet. What is left
+   below is the detail CONTENT's phone dressing — the pinned meta band and
+   the map's reading height. Desktop rules above are untouched. */
 @media (max-width: 767px) {
   .replay-view {
-    flex-direction: column;
-
-    /* The phone page IS the level-2 list now (the detail rides a tall
-       bottom-sheet window — see the HkModal in ReplayView): full height,
-       no stacked-detail cap, nothing below it to separate from. */
-    &__list {
-      width: 100%;
-      flex: 1;
-      min-height: 0;
-      max-height: none;
-      border-right: none;
-      border-bottom: none;
-    }
-
-    &__main {
-      flex: 1;
-      min-height: 0;
-      /* Desktop keeps internal scrollers (roster/map); on phones the
-         stacked detail scrolls inside the hikari container (__main-scroll)
-         — the column itself no longer scrolls, so its desktop padding
-         drops and the sheet padding rides on the inner wrapper. */
-      padding: 0;
-    }
-
-    &__main-inner {
-      padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
-    }
-
-    &__content {
-      padding-right: 0;
-    }
+    /* The phone page IS the level-2 roster (HkMasterDetail's narrow split
+       gives it the whole width) and the detail rides the component's own
+       window form — the family bottom sheet, whose body carries the phone
+       gutter and the safe-area clearance. Neither column needs a phone
+       override here any more; only the detail's content does. */
 
     /* The map/mode/actions row pins while the stacked detail scrolls under
        it (settings-page bar recipe): negative margins bleed the surface over
-       __main's phone padding, the padding restores the resting offset. */
+       the sheet body's gutter — HkModal's phone body inset is 1rem — and the
+       padding restores the resting offset. */
     &__meta {
       position: sticky;
       top: 0;
       z-index: 5;
-      margin: -0.75rem -0.75rem 0;
-      padding: 0.75rem 0.75rem 0.5rem;
+      margin: -1rem -1rem 0;
+      padding: 1rem 1rem 0.5rem;
       background: rgb(var(--color-surface));
       @supports (background: rgb(0 0 0 / calc(1% + 0% * var(--ui-opacity, 1)))) {
         background: rgb(var(--color-surface) / min(100%, calc(88% + 12% * var(--ui-opacity, 1))));
@@ -1002,15 +933,5 @@
 @media (max-width: 767px) {
   :is(.replay-view__results-frame, .replay-view__chat-panel) .hk-modal-body-inner {
     padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  }
-}
-
-/* The level-3 replay detail sheet (phone): near the sheet cap so the map
-   and roster get real estate; hk-settings-host (the second content class)
-   keeps the frame height stable and the section flex chain fills the
-   body. */
-@media (max-width: 767px) {
-  .wowsp-replay-sheet {
-    height: calc(100dvh - var(--hk-sheet-top-inset, 4.25rem));
   }
 }

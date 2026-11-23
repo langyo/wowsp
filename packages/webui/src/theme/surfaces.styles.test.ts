@@ -105,6 +105,9 @@ const LIVE_SURFACES = [
   ".hk-dp-trigger",
   ".hk-dp-native",
   ".hk-scroll-container-autotag",
+  // The standard two-pane console's roster column — the replay/resources
+  // sidebars' own tint before the 2026-11-23 master-detail migration.
+  ".hk-master-detail-list",
   ".hk-fab-mini",
   ".hk-markdown-overlay",
   ".hk-icon-group",

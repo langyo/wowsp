@@ -123,6 +123,11 @@
 :root .hk-dp-trigger,
 :root .hk-dp-native,
 :root .hk-scroll-container-autotag,
+/* The standard two-pane console's roster column (HkMasterDetail): the replay
+   and resources sidebars were the page's own 50%-base tint before the
+   2026-11-23 master-detail migration moved their shells onto the component,
+   so the dial keeps covering them here instead of in each view. */
+:root .hk-master-detail-list,
 :root .hk-fab[data-variant="glass"] .hk-fab-button,
 :root .hk-fab-mini,
 :root .hk-markdown-overlay,
@@ -223,6 +228,11 @@
   }
   :root .hk-scroll-container-autotag {
     background: rgb(var(--color-surface) / min(100%, calc(78% + 22% * var(--ui-opacity, 1))));
+  }
+  /* The master-detail roster's base alpha (the retired .replay-view__list /
+     .resources-view__side fill). */
+  :root .hk-master-detail-list {
+    background: rgb(var(--color-surface) / min(100%, calc(50% + 50% * var(--ui-opacity, 1))));
   }
   :root .hk-fab[data-variant="glass"] .hk-fab-button {
     background: rgb(var(--color-surface) / min(100%, calc(78% + 22% * var(--ui-opacity, 1))));

@@ -143,8 +143,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.446
-        version: 0.55.446(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.464
+        version: 0.55.464(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -422,8 +422,8 @@ packages:
       pinia:
         optional: true
 
-  '@celestia-island/hikari@0.55.446':
-    resolution: {integrity: sha512-Y1E8gcx43yJivZAb+6blYAky+Pf40bTyj0Nfqp8fGN5f9tUrC4nw1xO7Wi31/XH4fIqR7scDBj6pHKii/ur1dg==}
+  '@celestia-island/hikari@0.55.464':
+    resolution: {integrity: sha512-bEYHoS/xGJkPJ96X7dtBdtHegmHYnk+okSDE5bn8qjhsp/vE28j081lL8wGJOlhsubjVMqyq+dUVnlKSTUbIuQ==}
     peerDependencies:
       '@types/three': ^0.185
       pinia: ^3
@@ -432,6 +432,9 @@ packages:
     peerDependenciesMeta:
       pinia:
         optional: true
+
+  '@celestia-island/tairitsu-host-client@0.1.0':
+    resolution: {integrity: sha512-Ge8jNk5B8n1vfHyJBrhrAUKgaFIhWDvh40JrN/awgvJ0iXPO1BABCnj02bsjT+FYLg8QRCBt6jeTJXrI51OOtw==}
 
   '@celestia-island/tairitsu-transport@0.2.0':
     resolution: {integrity: sha512-4pdlaTuVN4J7RnZHQ7LsXFQb9ZXcY5yCPQ2u24TCq2ax1PNB3fX/a4lZycKBb4fPYjX4qWuzvFSkmWyn72tIFA==}
@@ -3469,9 +3472,10 @@ snapshots:
       three: 0.186.1
       vue: 3.5.43(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.446(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.464(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@bytecodealliance/preview2-shim': 0.31.1
+      '@celestia-island/tairitsu-host-client': 0.1.0
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.186.0
       '@xterm/addon-fit': 0.11.0
@@ -3484,6 +3488,8 @@ snapshots:
       vue: 3.5.43(typescript@7.0.2)
     optionalDependencies:
       pinia: 4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2))
+
+  '@celestia-island/tairitsu-host-client@0.1.0': {}
 
   '@celestia-island/tairitsu-transport@0.2.0': {}
 

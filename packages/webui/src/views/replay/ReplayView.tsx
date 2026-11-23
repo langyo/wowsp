@@ -87,6 +87,7 @@ import ribbonNamesRaw from "@/data/ribbon_names.json";
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
 import {
   HkButton,
+  HkMasterDetail,
   HkModal,
   HkScrollContainer,
   HkScrollPin,
@@ -2025,6 +2026,12 @@ export const ReplayCard = defineComponent({
  * indexed by match time / mode / own ship / map; picking one opens the detail
  * view: a holographic battle map, the recorder's ship as a holographic model,
  * and an enriched roster (this-match ship + ship type + on-demand avg stats).
+ *
+ * The two columns are hikari's standard console (HkMasterDetail) — the
+ * component this page's geometry was generalized from — so this file ships
+ * only the two slots' content: the rail's head + scroll container and the
+ * detail's map/meta/windows. Narrow viewports raise the detail as the
+ * component's own window form.
  */
 export default defineComponent({
   name: "ReplayView",
@@ -2297,10 +2304,13 @@ export default defineComponent({
     // wizard that pulled from the desktop was retired on 2026-11-13 —
     // the phone's live-stats link is the account-routed gateway.)
     // Phone LAYOUT (viewport): the replay page shows ONLY the level-2 list;
-    // opening a replay raises the level-3 detail as a tall bottom-sheet
-    // WINDOW (hikari docks HkModal at <=767px, backGuard closes it on the
-    // Android back gesture) — the shittim-chest every-window-pops-from-
-    // the-bottom convention. Desktop keeps the inline detail pane.
+    // opening a replay raises the level-3 detail as a window (HkMasterDetail's
+    // narrow form — the family bottom sheet at <=767px, backGuard closes it on
+    // the Android back gesture), the shittim-chest every-window-pops-from-the-
+    // bottom convention. Desktop keeps the inline detail pane, so this flag
+    // only says WHICH of the component's two forms applies: `detailSheetOpen`
+    // is the sheet's own raise/dismiss state (dismissing the sheet keeps the
+    // decoded replay — the list's active card stays selected).
     const { isMobile: phoneLayout } = useBreakpoint();
     const detailSheetOpen = ref(false);
     const fileInput = ref<HTMLInputElement | null>(null);
@@ -2953,401 +2963,14 @@ export default defineComponent({
     }
 
     return () => {
-      // The detail pane, built once per render: desktop mounts it inline,
-      // phone layout raises it as a tall bottom-sheet window (the
-      // level-3 content of the replay page - the list below is the
-      // level-2 surface the phone shows directly).
-      const mainSection = (
-          <section class="replay-view__main">
-            {/* Phone-only page scroller (≤767px the stacked detail scrolls
-                here): the hikari container owns the scrollbar, and the inner
-                wrapper keeps the former direct-child flex chain (__content
-                flex:1 etc.) intact — on desktop nothing overflows, so the
-                roster/map keep managing their own scroll exactly as before. */}
-            <HkScrollContainer class="replay-view__main-scroll">
-              <div class="replay-view__main-inner">
-                {parser.current.value ? (
-                  <div class="replay-view__content">
-                    {parser.error.value ? (
-                      <ErrorCard error={parser.error.value} />
-                    ) : null}
-                    {/* data-replay-decode is the e2e/visual harnesses' settle
-                        hook (pending/settled/failed): the results pill has no
-                        spinner face left to poll, see decodeState. */}
-                    <header class="replay-view__meta" data-replay-decode={decodeState.value}>
-                      {/* The map as a jump tag (shared with the live head): hover
-                          previews the map's bundled minimap, click opens the map's
-                          tactical board — see MapNameTag. */}
-                      <MapNameTag class="replay-view__map" spaceId={parser.current.value.mapName} lang={mapLang.value} />
-                      <span class="replay-view__meta-item">
-                        {formatDateTime(parser.current.value.dateTime)}
-                      </span>
-                      {parser.current.value.matchGroup ? (
-                        <AppTag
-                          color={
-                            (spawnSymmetryOperation.value
-                              ? // Decode-time refinement: the spawn probe
-                                // promoted a plain-co-op descriptor label to
-                                // 行动 (see spawnSymmetryOperation above).
-                                modeColorOfKey("operation")
-                              : modeColor(
-                                  parser.current.value.matchGroup,
-                                  parser.current.value.scenario,
-                                  parser.current.value.eventType,
-                                  parser.current.value.botCount ?? 0,
-                                  parser.current.value.scriptedUnitCount ?? 0,
-                                  hasSingleTeamRoster(parser.current.value.vehicles),
-                                )).color
-                          }
-                        >
-                          {spawnSymmetryOperation.value
-                            ? modeLabelOfKey("operation")
-                            : modeLabel(
-                                parser.current.value.matchGroup,
-                                parser.current.value.scenario,
-                                parser.current.value.eventType,
-                                parser.current.value.botCount ?? 0,
-                                parser.current.value.scriptedUnitCount ?? 0,
-                                hasSingleTeamRoster(parser.current.value.vehicles),
-                              )}
-                        </AppTag>
-                      ) : null}
-                      <AppTag tone="primary">
-                        {formatPlayerCount(parser.current.value.vehicles, isOperation.value)}
-                      </AppTag>
-                      {duration.value > 0 ? (
-                        <span class="replay-view__meta-item">
-                          {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
-                        </span>
-                      ) : null}
-                      {/* 战后统计 — the post-battle window's ONLY entry
-                          point, so it is interactive from the moment a
-                          replay is open: NO loading face (its spinner used
-                          to block the very window the wait belongs to —
-                          2026-11-12 report; features/replay/resultsPill
-                          carries the contract). The window itself owns the
-                          pending body (see the HkModal below). The danger
-                          face survives a failed decode with nothing to
-                          open: stay mounted non-interactive, hint = the
-                          watchdog/decode error (the map-area ErrorCard
-                          alone is easy to miss, and a vanished pill read
-                          as "still spinning" — 2026-11-13 report). */}
-                      {resultsFace.value === "failed" ? (
-                        <AppTag
-                          class="replay-view__results replay-view__results--failed"
-                          tone="danger"
-                          data-hint={trajectoryError.value || undefined}
-                        >
-                          {t("replay.results")}
-                        </AppTag>
-                      ) : (
-                        <AppTag
-                          class="replay-view__results"
-                          interactive
-                          tone="accent"
-                          onClick={() => (showResults.value = !showResults.value)}
-                        >
-                          {t("replay.results")}
-                        </AppTag>
-                      )}
-                      {chatCount.value > 0 ? (
-                        <AppTag
-                          interactive
-                          tone="accent"
-                          onClick={() => (showChat.value = !showChat.value)}
-                        >
-                          {t("replay.chatLog")}
-                        </AppTag>
-                      ) : null}
-                      <AppTag
-                        interactive
-                        tone="accent"
-                        onClick={() => (showReport.value ? closeStaticReport() : void openStaticReport())}
-                      >
-                        {t("replay.report.title")}
-                      </AppTag>
-                      {/* The reveal shortcut — the meta row's LAST inline
-                          item (it used to float over the content corner):
-                          transparent ghost icon button that shows the replay
-                          file pre-selected in the OS file manager. The hover
-                          hint rides the delegated data-hint channel as a
-                          card — the label as the head, the replay's
-                          install-relative path as the identity line (see
-                          revealRelPath); a native title attribute would trip
-                          nativeTitlePolicy fence. Desktop app only — phones
-                          have no file manager and a plain browser tab has no
-                          such command. */}
-                      {isNative() && !isMobileApp() && parser.current.value.path ? (
-                        <button
-                          type="button"
-                          class="replay-view__reveal"
-                          data-hint-card={JSON.stringify({
-                            title: t("replay.reveal.tip"),
-                            subtitle: revealRelPath.value,
-                          })}
-                          aria-label={t("replay.reveal.tip")}
-                          onClick={onRevealReplay}
-                        >
-                          <FolderSearch size={14} />
-                        </button>
-                      ) : null}
-                    </header>
-                    {/* The 战后统计 as a first-class hikari window (2026-11-03): HkModal
-                        owns the chrome/motion — previously the hand-rolled
-                        .replay-view__modal overlay that popped in unanimated. The
-                        WINDOW OWNS THE PENDING STATE (2026-11-12): the meta-row pill
-                        never spins, so it opens this window the moment a replay is
-                        open and the body carries the wait — spinner + replay.loading
-                        while the packet decode runs, swapped reactively (same render
-                        flush) to the decoded full/fallback panel the moment the
-                        stream lands. A failed/stalled decode (useReplayPositions'
-                        watchdog) explains itself in the body instead of leaving an
-                        empty window; resultsPill's resultsWindowBody pins that order
-                        (data first) and resultsPillFace pins the pill's faces. The
-                        panel REMAINS mounted through HkModal's leave transition. The
-                        slot closure re-widens parser.current — re-narrow it locally.
-                        The body mounts DIRECTLY in HkModal's default slot: HkModal's
-                        own scroll body owns the scrolling, like the post-battle detail
-                        windows above (the old nested HkScrollContainer stacked a
-                        second scroller and its own inner padding on top of HkModal's
-                        1.5rem gutter, leaving a dead band above the panel's first
-                        content — 2026-11-07 report; the old mode/map head row retired
-                        2026-11-07). */}
-                    <HkModal
-                      modelValue={showResults.value}
-                      onUpdate:modelValue={(v: boolean) => (showResults.value = v)}
-                      title={t("replay.results")}
-                      width="min(1100px, 94vw)"
-                      contentClass="replay-view__results-frame"
-                    >
-                      {{
-                        /* Subheader caveat: only the FALLBACK panel (a replay
-                           that ended before the results were recorded) needs
-                           it — the full panel IS the final result. While the
-                           decode is still pending the body owns the whole
-                           pending surface (spinner + replay.loading), so no
-                           note mounts here: one surface per message, no
-                           duplicate "parsing" line under the title. */
-                        header:
-                          !battleResults.value && trajectories.value.length > 0
-                            ? () => (
-                                <span class="replay-view__results-note">{t("replay.resultsIncomplete")}</span>
-                              )
-                            : undefined,
-                        default: () => {
-                          // Re-narrow the widened slot closure (see above).
-                          const cur = parser.current.value;
-                          if (!cur) return null;
-                          const body = resultsBody.value;
-                          const raw = battleResults.value;
-                          if (body === "panel" && raw) {
-                            return (
-                              <PostBattlePanel
-                                raw={raw}
-                                head={{
-                                  matchGroup: cur.matchGroup,
-                                  scenario: cur.scenario,
-                                  eventType: cur.eventType,
-                                  botCount: cur.botCount ?? null,
-                                  scriptedUnitCount: cur.scriptedUnitCount ?? null,
-                                  mapName: cur.mapName,
-                                  realm: realm.value,
-                                  gameVersion: gameVersionOf(cur.raw),
-                                  battleTime: cur.dateTime ? formatDateTime(cur.dateTime) : null,
-                                  durationSec: duration.value > 0 ? duration.value : null,
-                                }}
-                                operation={isOperation.value}
-                                stream={{
-                                  trajectories: trajectories.value,
-                                  recorderVehicleId: recorderVehicleId.value,
-                                  shotKills: shotKills.value,
-                                  damageStats: damageStats.value,
-                                  achievements: achievements.value,
-                                  arenaPlayers: arenaPlayers.value,
-                                  shellLaunches: shellLaunches.value,
-                                  torpedoes: torpedoes.value,
-                                }}
-                                roster={cur.vehicles}
-                                builds={allyBuilds.value}
-                                replayPath={cur.path}
-                                onClose={() => (showResults.value = false)}
-                              />
-                            );
-                          }
-                          if (body === "fallback") {
-                            return (
-                              <PostBattleFallbackPanel
-                                vehicles={cur.vehicles}
-                                trajectories={trajectories.value}
-                                explosions={explosions.value}
-                                shotKills={shotKills.value}
-                                damageStats={damageStats.value}
-                                realm={realm.value}
-                                operation={isOperation.value}
-                                shipNameOrder={shipNameOrder.value}
-                                arenaPlayers={arenaPlayers.value}
-                                inferredDeaths={inferredDeaths.value}
-                                statsMode={fallbackStatsMode.value}
-                                onClose={() => (showResults.value = false)}
-                              />
-                            );
-                          }
-                          if (body === "pending") {
-                            return (
-                              <div class="replay-view__results-pending">
-                                <HkSpinner size="md" tone="current" />
-                                <span>{t("replay.loading")}</span>
-                              </div>
-                            );
-                          }
-                          if (body === "error") {
-                            /* The standard in-page error card (raw text
-                               structured, copyable) — the same surface the
-                               replay header's parse error uses. */
-                            return (
-                              <div class="replay-view__results-error">
-                                <ErrorCard error={trajectoryError.value} />
-                              </div>
-                            );
-                          }
-                          /* Settled with nothing to show (an empty/degenerate
-                             packet stream): the incomplete-data note. */
-                          return (
-                            <div class="replay-view__results-pending">
-                              <span>{t("replay.resultsIncomplete")}</span>
-                            </div>
-                          );
-                        },
-                      }}
-                    </HkModal>
-
-                    {/* The 聊天记录 as a first-class hikari window — same migration as
-                        the 战后统计 (2026-11-03). */}
-                    <HkModal
-                      modelValue={showChat.value}
-                      onUpdate:modelValue={(v: boolean) => (showChat.value = v)}
-                      title={t("replay.chatLog")}
-                      width="min(560px, 92vw)"
-                      contentClass="replay-view__chat-panel"
-                    >
-                      {{
-                        default: () => {
-                          const cur = parser.current.value;
-                          if (!cur) return null;
-                          return chatCount.value > 0 ? (
-                            <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
-                              <ChatLogPanel
-                                events={chatMessages.value}
-                                vehicles={cur.vehicles}
-                                trajectories={trajectories.value}
-                                arenaPlayers={arenaPlayers.value}
-                                duration={duration.value}
-                                realm={realm.value}
-                                mapApi={mapRef.value}
-                              />
-                            </div>
-                          ) : null;
-                        },
-                      }}
-                    </HkModal>
-
-                    {/* The AI 战报 as a first-class window (2026-11-03 extraction):
-                        HkModal owns the chrome/motion (open animation, back guard,
-                        phone sheet) — previously a hand-rolled .replay-view__modal
-                        overlay that popped in unanimated. The host keeps ONLY the data
-                        layer (fetch + stale guard + out-of-band swap watch); the modal
-                        always mounts so HkModal's leave transition can play. A keyframe
-                        click is a full jump: the host closes this window, seeks the
-                        replay and focuses the camera on the analyzed player. */}
-                    <StaticReportModal
-                      open={showReport.value}
-                      report={staticReport.value}
-                      loading={staticReportLoading.value}
-                      error={staticReportError.value}
-                      sheet={reportSheet.value}
-                      onClose={closeStaticReport}
-                      onSeek={jumpToReportMoment}
-                      onPick={(entityId) => void openStaticReport(entityId)}
-                    />
-
-                    <div class="replay-view__detail">
-                      <div class="replay-view__map-wrap">
-                        {trajectoryError.value ? (
-                          // Hardcoded English on purpose — the trajectory
-                          // decoder is a power-user diagnostic path without a
-                          // translation budget (kept verbatim from the old
-                          // placeholder).
-                          <div class="replay-view__placeholder">
-                            <ErrorCard title="Trajectory decode failed" error={trajectoryError.value} />
-                          </div>
-                        ) : updater.portable ? (
-                          // The portable edition ships no 3D — the
-                          // holographic map gives way to the install hint.
-                          <div class="replay-view__placeholder">{t("common.portable3dBlocked")}</div>
-                        ) : (
-                          <HolographicMap
-                            ref={mapRef}
-                            replayPath={parser.current.value.path}
-                            trajectories={trajectories.value}
-                            shellLaunches={shellLaunches.value}
-                            explosions={explosions.value}
-                            torpedoes={torpedoes.value}
-                            torpedoSteers={torpedoSteers.value}
-                            weaponLocks={weaponLocks.value}
-                            battleResults={battleResults.value ?? undefined}
-                            replayVersion={replayVersion.value ?? undefined}
-                            mapNamePkt={mapNamePkt.value ?? undefined}
-                            cameraFrames={cameraFrames.value}
-                            netStats={netStats.value}
-                            leavesMap={leavesMap.value}
-                            cameraModes={cameraModes.value}
-                            squadronCreates={squadronCreates.value}
-                            squadronPlanes={squadronPlanes.value}
-                            minimapSquadronAdds={minimapSquadronAdds.value}
-                            minimapSquadronMoves={minimapSquadronMoves.value}
-                            minimapSquadronRemoves={minimapSquadronRemoves.value}
-                            wards={wards.value}
-                            wardRemoves={wardRemoves.value}
-                            shotKills={shotKills.value}
-                            damageStats={damageStats.value}
-                            chatMessages={chatMessages.value}
-                            achievements={achievements.value}
-                            arenaPlayers={arenaPlayers.value}
-                            inferredDeaths={inferredDeaths.value}
-                            weatherTransitions={weatherTransitions.value}
-                            weatherNotifications={weatherNotifications.value}
-                            consumableUses={consumableUses.value}
-                            vehicles={parser.current.value.vehicles}
-                            operation={isOperation.value}
-                            encyclopedia={encyclopedia.byId}
-                            mapId={parser.current.value.mapName ?? ""}
-                            matchGroup={parser.current.value.matchGroup ?? ""}
-                            mapName={parser.current.value.mapName ?? ""}
-                            initialTime={initialSeek}
-                            initialMinimapZoom={route.query.mm === "1"}
-                            realm={realm.value}
-                            shipNameOrder={shipNameOrder.value}
-                            statsMode={fallbackStatsMode.value}
-                            branch={openReplayBranch.value}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ) : parser.error.value ? (
-                  <div class="replay-view__placeholder">
-                    <ErrorCard error={parser.error.value} />
-                  </div>
-                ) : (
-                  <div class="replay-view__placeholder">{t("replay.select")}</div>
-                )}
-              </div>
-            </HkScrollContainer>
-          </section>
-      );
-      return (
-      <main class="replay-view">
-        <aside class="replay-view__list">
+      // ── the master column: the roster ─────────────────────────────
+      // HkMasterDetail owns the column shell (the 320px track, the
+      // hairline, the surface tint, the clip and the internal scroller),
+      // and its shell is a flex column — exactly the head-over-rail
+      // chain this slot renders, so the slot ships those two children
+      // alone (no wrapper element of its own).
+      const listColumn = (
+        <>
           <div class="replay-view__list-head">
             <div class="replay-view__list-head-row">
               <h2 class="replay-view__list-title">{t("replay.list.title")}</h2>
@@ -3521,37 +3144,426 @@ export default defineComponent({
               )}
             </div>
           </HkScrollContainer>
-        </aside>
+        </>
+      );
 
-        {phoneLayout.value ? (
+      // ── the detail column: the selected battle ─────────────────────
+      // The component's detail region is chrome-less and scrolls
+      // internally, so the slot ships the content itself: the map, the
+      // meta row and the two reading windows. `detailOpen` false is the
+      // component's own empty state (same sentence this view's
+      // placeholder used to say).
+      const detailColumn = parser.current.value ? (
+        <div class="replay-view__content">
+          {parser.error.value ? (
+            <ErrorCard error={parser.error.value} />
+          ) : null}
+          {/* data-replay-decode is the e2e/visual harnesses' settle
+              hook (pending/settled/failed): the results pill has no
+              spinner face left to poll, see decodeState. */}
+          <header class="replay-view__meta" data-replay-decode={decodeState.value}>
+            {/* The map as a jump tag (shared with the live head): hover
+                previews the map's bundled minimap, click opens the map's
+                tactical board — see MapNameTag. */}
+            <MapNameTag class="replay-view__map" spaceId={parser.current.value.mapName} lang={mapLang.value} />
+            <span class="replay-view__meta-item">
+              {formatDateTime(parser.current.value.dateTime)}
+            </span>
+            {parser.current.value.matchGroup ? (
+              <AppTag
+                color={
+                  (spawnSymmetryOperation.value
+                    ? // Decode-time refinement: the spawn probe
+                      // promoted a plain-co-op descriptor label to
+                      // 行动 (see spawnSymmetryOperation above).
+                      modeColorOfKey("operation")
+                    : modeColor(
+                        parser.current.value.matchGroup,
+                        parser.current.value.scenario,
+                        parser.current.value.eventType,
+                        parser.current.value.botCount ?? 0,
+                        parser.current.value.scriptedUnitCount ?? 0,
+                        hasSingleTeamRoster(parser.current.value.vehicles),
+                      )).color
+                }
+              >
+                {spawnSymmetryOperation.value
+                  ? modeLabelOfKey("operation")
+                  : modeLabel(
+                      parser.current.value.matchGroup,
+                      parser.current.value.scenario,
+                      parser.current.value.eventType,
+                      parser.current.value.botCount ?? 0,
+                      parser.current.value.scriptedUnitCount ?? 0,
+                      hasSingleTeamRoster(parser.current.value.vehicles),
+                    )}
+              </AppTag>
+            ) : null}
+            <AppTag tone="primary">
+              {formatPlayerCount(parser.current.value.vehicles, isOperation.value)}
+            </AppTag>
+            {duration.value > 0 ? (
+              <span class="replay-view__meta-item">
+                {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
+              </span>
+            ) : null}
+            {/* 战后统计 — the post-battle window's ONLY entry
+                point, so it is interactive from the moment a
+                replay is open: NO loading face (its spinner used
+                to block the very window the wait belongs to —
+                2026-11-12 report; features/replay/resultsPill
+                carries the contract). The window itself owns the
+                pending body (see the HkModal below). The danger
+                face survives a failed decode with nothing to
+                open: stay mounted non-interactive, hint = the
+                watchdog/decode error (the map-area ErrorCard
+                alone is easy to miss, and a vanished pill read
+                as "still spinning" — 2026-11-13 report). */}
+            {resultsFace.value === "failed" ? (
+              <AppTag
+                class="replay-view__results replay-view__results--failed"
+                tone="danger"
+                data-hint={trajectoryError.value || undefined}
+              >
+                {t("replay.results")}
+              </AppTag>
+            ) : (
+              <AppTag
+                class="replay-view__results"
+                interactive
+                tone="accent"
+                onClick={() => (showResults.value = !showResults.value)}
+              >
+                {t("replay.results")}
+              </AppTag>
+            )}
+            {chatCount.value > 0 ? (
+              <AppTag
+                interactive
+                tone="accent"
+                onClick={() => (showChat.value = !showChat.value)}
+              >
+                {t("replay.chatLog")}
+              </AppTag>
+            ) : null}
+            <AppTag
+              interactive
+              tone="accent"
+              onClick={() => (showReport.value ? closeStaticReport() : void openStaticReport())}
+            >
+              {t("replay.report.title")}
+            </AppTag>
+            {/* The reveal shortcut — the meta row's LAST inline
+                item (it used to float over the content corner):
+                transparent ghost icon button that shows the replay
+                file pre-selected in the OS file manager. The hover
+                hint rides the delegated data-hint channel as a
+                card — the label as the head, the replay's
+                install-relative path as the identity line (see
+                revealRelPath); a native title attribute would trip
+                nativeTitlePolicy fence. Desktop app only — phones
+                have no file manager and a plain browser tab has no
+                such command. */}
+            {isNative() && !isMobileApp() && parser.current.value.path ? (
+              <button
+                type="button"
+                class="replay-view__reveal"
+                data-hint-card={JSON.stringify({
+                  title: t("replay.reveal.tip"),
+                  subtitle: revealRelPath.value,
+                })}
+                aria-label={t("replay.reveal.tip")}
+                onClick={onRevealReplay}
+              >
+                <FolderSearch size={14} />
+              </button>
+            ) : null}
+          </header>
+          {/* The 战后统计 as a first-class hikari window (2026-11-03): HkModal
+              owns the chrome/motion — previously the hand-rolled
+              .replay-view__modal overlay that popped in unanimated. The
+              WINDOW OWNS THE PENDING STATE (2026-11-12): the meta-row pill
+              never spins, so it opens this window the moment a replay is
+              open and the body carries the wait — spinner + replay.loading
+              while the packet decode runs, swapped reactively (same render
+              flush) to the decoded full/fallback panel the moment the
+              stream lands. A failed/stalled decode (useReplayPositions'
+              watchdog) explains itself in the body instead of leaving an
+              empty window; resultsPill's resultsWindowBody pins that order
+              (data first) and resultsPillFace pins the pill's faces. The
+              panel REMAINS mounted through HkModal's leave transition. The
+              slot closure re-widens parser.current — re-narrow it locally.
+              The body mounts DIRECTLY in HkModal's default slot: HkModal's
+              own scroll body owns the scrolling, like the post-battle detail
+              windows above (the old nested HkScrollContainer stacked a
+              second scroller and its own inner padding on top of HkModal's
+              1.5rem gutter, leaving a dead band above the panel's first
+              content — 2026-11-07 report; the old mode/map head row retired
+              2026-11-07). */}
           <HkModal
-            modelValue={detailSheetOpen.value}
-            onUpdate:modelValue={(v: boolean) => (detailSheetOpen.value = v)}
-            title={t("replay.detail.title")}
-            width="100%"
-            contentClass="hk-settings-host wowsp-replay-sheet"
+            modelValue={showResults.value}
+            onUpdate:modelValue={(v: boolean) => (showResults.value = v)}
+            title={t("replay.results")}
+            width="min(1100px, 94vw)"
+            contentClass="replay-view__results-frame"
           >
-            {mainSection}
+            {{
+              /* Subheader caveat: only the FALLBACK panel (a replay
+                 that ended before the results were recorded) needs
+                 it — the full panel IS the final result. While the
+                 decode is still pending the body owns the whole
+                 pending surface (spinner + replay.loading), so no
+                 note mounts here: one surface per message, no
+                 duplicate "parsing" line under the title. */
+              header:
+                !battleResults.value && trajectories.value.length > 0
+                  ? () => (
+                      <span class="replay-view__results-note">{t("replay.resultsIncomplete")}</span>
+                    )
+                  : undefined,
+              default: () => {
+                // Re-narrow the widened slot closure (see above).
+                const cur = parser.current.value;
+                if (!cur) return null;
+                const body = resultsBody.value;
+                const raw = battleResults.value;
+                if (body === "panel" && raw) {
+                  return (
+                    <PostBattlePanel
+                      raw={raw}
+                      head={{
+                        matchGroup: cur.matchGroup,
+                        scenario: cur.scenario,
+                        eventType: cur.eventType,
+                        botCount: cur.botCount ?? null,
+                        scriptedUnitCount: cur.scriptedUnitCount ?? null,
+                        mapName: cur.mapName,
+                        realm: realm.value,
+                        gameVersion: gameVersionOf(cur.raw),
+                        battleTime: cur.dateTime ? formatDateTime(cur.dateTime) : null,
+                        durationSec: duration.value > 0 ? duration.value : null,
+                      }}
+                      operation={isOperation.value}
+                      stream={{
+                        trajectories: trajectories.value,
+                        recorderVehicleId: recorderVehicleId.value,
+                        shotKills: shotKills.value,
+                        damageStats: damageStats.value,
+                        achievements: achievements.value,
+                        arenaPlayers: arenaPlayers.value,
+                        shellLaunches: shellLaunches.value,
+                        torpedoes: torpedoes.value,
+                      }}
+                      roster={cur.vehicles}
+                      builds={allyBuilds.value}
+                      replayPath={cur.path}
+                      onClose={() => (showResults.value = false)}
+                    />
+                  );
+                }
+                if (body === "fallback") {
+                  return (
+                    <PostBattleFallbackPanel
+                      vehicles={cur.vehicles}
+                      trajectories={trajectories.value}
+                      explosions={explosions.value}
+                      shotKills={shotKills.value}
+                      damageStats={damageStats.value}
+                      realm={realm.value}
+                      operation={isOperation.value}
+                      shipNameOrder={shipNameOrder.value}
+                      arenaPlayers={arenaPlayers.value}
+                      inferredDeaths={inferredDeaths.value}
+                      statsMode={fallbackStatsMode.value}
+                      onClose={() => (showResults.value = false)}
+                    />
+                  );
+                }
+                if (body === "pending") {
+                  return (
+                    <div class="replay-view__results-pending">
+                      <HkSpinner size="md" tone="current" />
+                      <span>{t("replay.loading")}</span>
+                    </div>
+                  );
+                }
+                if (body === "error") {
+                  /* The standard in-page error card (raw text
+                     structured, copyable) — the same surface the
+                     replay header's parse error uses. */
+                  return (
+                    <div class="replay-view__results-error">
+                      <ErrorCard error={trajectoryError.value} />
+                    </div>
+                  );
+                }
+                /* Settled with nothing to show (an empty/degenerate
+                   packet stream): the incomplete-data note. */
+                return (
+                  <div class="replay-view__results-pending">
+                    <span>{t("replay.resultsIncomplete")}</span>
+                  </div>
+                );
+              },
+            }}
           </HkModal>
-        ) : (
-          mainSection
-        )}
 
-        {/* Hidden HTML file picker backing the mobile import action (the
-            styled button clicks it). Multi-select .wowsreplay only. Rendered
-            only on the phone build — desktop uses the native picker. */}
-        {isMobileApp() ? (
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            accept=".wowsreplay,.korablireplay"
-            class="replay-view__file-input"
-            onChange={(e: Event) => void onFilesChosen(e)}
+          {/* The 聊天记录 as a first-class hikari window — same migration as
+              the 战后统计 (2026-11-03). */}
+          <HkModal
+            modelValue={showChat.value}
+            onUpdate:modelValue={(v: boolean) => (showChat.value = v)}
+            title={t("replay.chatLog")}
+            width="min(560px, 92vw)"
+            contentClass="replay-view__chat-panel"
+          >
+            {{
+              default: () => {
+                const cur = parser.current.value;
+                if (!cur) return null;
+                return chatCount.value > 0 ? (
+                  <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
+                    <ChatLogPanel
+                      events={chatMessages.value}
+                      vehicles={cur.vehicles}
+                      trajectories={trajectories.value}
+                      arenaPlayers={arenaPlayers.value}
+                      duration={duration.value}
+                      realm={realm.value}
+                      mapApi={mapRef.value}
+                    />
+                  </div>
+                ) : null;
+              },
+            }}
+          </HkModal>
+
+          {/* The AI 战报 as a first-class window (2026-11-03 extraction):
+              HkModal owns the chrome/motion (open animation, back guard,
+              phone sheet) — previously a hand-rolled .replay-view__modal
+              overlay that popped in unanimated. The host keeps ONLY the data
+              layer (fetch + stale guard + out-of-band swap watch); the modal
+              always mounts so HkModal's leave transition can play. A keyframe
+              click is a full jump: the host closes this window, seeks the
+              replay and focuses the camera on the analyzed player. */}
+          <StaticReportModal
+            open={showReport.value}
+            report={staticReport.value}
+            loading={staticReportLoading.value}
+            error={staticReportError.value}
+            sheet={reportSheet.value}
+            onClose={closeStaticReport}
+            onSeek={jumpToReportMoment}
+            onPick={(entityId) => void openStaticReport(entityId)}
           />
-        ) : null}
-      </main>
-    );
+
+          <div class="replay-view__detail">
+            <div class="replay-view__map-wrap">
+              {trajectoryError.value ? (
+                // Hardcoded English on purpose — the trajectory
+                // decoder is a power-user diagnostic path without a
+                // translation budget (kept verbatim from the old
+                // placeholder).
+                <div class="replay-view__placeholder">
+                  <ErrorCard title="Trajectory decode failed" error={trajectoryError.value} />
+                </div>
+              ) : updater.portable ? (
+                // The portable edition ships no 3D — the
+                // holographic map gives way to the install hint.
+                <div class="replay-view__placeholder">{t("common.portable3dBlocked")}</div>
+              ) : (
+                <HolographicMap
+                  ref={mapRef}
+                  replayPath={parser.current.value.path}
+                  trajectories={trajectories.value}
+                  shellLaunches={shellLaunches.value}
+                  explosions={explosions.value}
+                  torpedoes={torpedoes.value}
+                  torpedoSteers={torpedoSteers.value}
+                  weaponLocks={weaponLocks.value}
+                  battleResults={battleResults.value ?? undefined}
+                  replayVersion={replayVersion.value ?? undefined}
+                  mapNamePkt={mapNamePkt.value ?? undefined}
+                  cameraFrames={cameraFrames.value}
+                  netStats={netStats.value}
+                  leavesMap={leavesMap.value}
+                  cameraModes={cameraModes.value}
+                  squadronCreates={squadronCreates.value}
+                  squadronPlanes={squadronPlanes.value}
+                  minimapSquadronAdds={minimapSquadronAdds.value}
+                  minimapSquadronMoves={minimapSquadronMoves.value}
+                  minimapSquadronRemoves={minimapSquadronRemoves.value}
+                  wards={wards.value}
+                  wardRemoves={wardRemoves.value}
+                  shotKills={shotKills.value}
+                  damageStats={damageStats.value}
+                  chatMessages={chatMessages.value}
+                  achievements={achievements.value}
+                  arenaPlayers={arenaPlayers.value}
+                  inferredDeaths={inferredDeaths.value}
+                  weatherTransitions={weatherTransitions.value}
+                  weatherNotifications={weatherNotifications.value}
+                  consumableUses={consumableUses.value}
+                  vehicles={parser.current.value.vehicles}
+                  operation={isOperation.value}
+                  encyclopedia={encyclopedia.byId}
+                  mapId={parser.current.value.mapName ?? ""}
+                  matchGroup={parser.current.value.matchGroup ?? ""}
+                  mapName={parser.current.value.mapName ?? ""}
+                  initialTime={initialSeek}
+                  initialMinimapZoom={route.query.mm === "1"}
+                  realm={realm.value}
+                  shipNameOrder={shipNameOrder.value}
+                  statsMode={fallbackStatsMode.value}
+                  branch={openReplayBranch.value}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : parser.error.value ? (
+        <div class="replay-view__placeholder">
+          <ErrorCard error={parser.error.value} />
+        </div>
+      ) : (
+        <div class="replay-view__placeholder">{t("replay.select")}</div>
+      );
+
+      // Narrow viewports raise the detail in the component's own window
+      // form; that form is chosen by DISMISSAL, so the close channel is
+      // bound only where the sheet applies (the component renders its close
+      // affordance only for a host that can deselect). Desktop keeps the
+      // inline pane with no close chrome.
+      return (
+        <main class="replay-view">
+          <HkMasterDetail
+            detailOpen={
+              phoneLayout.value ? detailSheetOpen.value : parser.selectedPath.value != null
+            }
+            detailTitle={t("replay.detail.title")}
+            emptyTitle={t("replay.select")}
+            listWidth="320px"
+            onClose={phoneLayout.value ? () => (detailSheetOpen.value = false) : undefined}
+          >
+            {{ list: () => [listColumn], detail: () => [detailColumn] }}
+          </HkMasterDetail>
+
+          {/* Hidden HTML file picker backing the mobile import action (the
+              styled button clicks it). Multi-select .wowsreplay only.
+              Rendered only on the phone build — desktop uses the native
+              picker. */}
+          {isMobileApp() ? (
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              accept=".wowsreplay,.korablireplay"
+              class="replay-view__file-input"
+              onChange={(e: Event) => void onFilesChosen(e)}
+            />
+          ) : null}
+        </main>
+      );
     };
   },
 });
