@@ -103,7 +103,18 @@
   font-size: var(--text-sm);
 }
 
+/* The roster table — hikari's HkScrollContainer owns the scrollbar (the
+   auto-hiding overlay track draws the scroll chrome under the grid); the
+   row rhythm moved to __roster-inner so it scrolls with the rows. Desktop
+   keeps the grid stretched to the card; the phone block below floors head
+   and rows at one min-width so the roster pans inside its viewport. */
 .clan-card__roster {
+  & > .hk-scroll-container-viewport {
+    overscroll-behavior-x: contain;
+  }
+}
+
+.clan-card__roster-inner {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -201,12 +212,12 @@
    The roster is a true table (name / role / four numeric columns): its
    fixed tracks (84+64+62+64+74 = 348px + gaps) sum past a 393px viewport
    and used to bleed the grid out of the card. The roster now scrolls IN
-   PLACE, head and rows sharing one min-width so captions stay over their
-   columns; member buttons grow touch-height (every row jumps to that
-   player's lookup) and sortable head cells get a tap band. The hero's big
-   numbers step down and the row wraps so winrate + battles + PR never
-   crush each other; card padding joins the 12px phone vocabulary.
-   Desktop rules above are untouched. */
+   PLACE inside its HkScrollContainer viewport, head and rows riding one
+   shared track width so captions stay over their columns; member buttons
+   grow touch-height (every row jumps to that player's lookup) and sortable
+   head cells get a tap band. The hero's big numbers step down and the row
+   wraps so winrate + battles + PR never crush each other; card padding
+   joins the 12px phone vocabulary. Desktop rules above are untouched. */
 @media (max-width: 767px) {
   .clan-card {
     padding: 0.75rem;
@@ -227,12 +238,9 @@
     font-size: 1.1rem;
   }
 
-  .clan-card__roster {
-    overflow-x: auto;
-  }
-
-  .clan-card__roster-head,
-  .clan-card__member {
+  /* The floor parks on the track wrapper, so head and rows stretch to the
+     same width and captions stay over their columns while the roster pans. */
+  .clan-card__roster-inner {
     min-width: 30rem;
   }
 

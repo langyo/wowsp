@@ -18,7 +18,7 @@
  */
 import { computed, defineComponent, ref } from "vue";
 
-import { HkSpinner } from "@celestia-island/hikari";
+import { HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import ErrorCard from "@/components/base/ErrorCard";
 import ShipFilterBar, { type FilterState } from "@/components/ships/ShipFilterBar";
@@ -223,55 +223,62 @@ export default defineComponent({
             {filteredShips.value.length === 0 ? (
               <p class="ranked-ships__state">{t("dashboard.noShipsMatchFilter")}</p>
             ) : (
-              <div class="ranked-ships__list">
-                {filteredShips.value.map((s) => {
-                  const meta = metaOf(s.shipId);
-                  // Per-ship badge, not the class-level code: cruisers split
-                  // CA vs CL off the baked main-gun caliber of THIS row's
-                  // ship (unbaked oddities keep the combined CA/CL code —
-                  // see shipTypeBadgeShort). Same badge vocabulary as the
-                  // hover card, so the hint explains exactly the code the
-                  // pointer is over.
-                  const code = shipTypeBadgeShort(meta?.type, s.shipId);
-                  return (
-                    <div class="ranked-ships__ship" key={s.shipId}>
-                      <span class="ranked-ships__ship-ico">
-                        {/* ONE class-glyph provider: the ranked row's icon is
-                            the shared BattleIcon (vector art), not a local
-                            img copy of the same URL. */}
-                        {meta?.type ? (
-                          <BattleIcon type={meta.type} variant="plain" size={22} />
-                        ) : null}
-                      </span>
-                      <span
-                        class="ranked-ships__ship-type"
-                        data-hint-card={shipTypeHintCard(code)}
-                      >
-                        {code}
-                      </span>
-                      <em class="ranked-ships__ship-tier">
-                        {meta?.tier ? tierToRoman(meta.tier) : ""}
-                      </em>
-                      <span class="ranked-ships__ship-name">{displayName(s)}</span>
-                      <span class="ranked-ships__ship-battles">{s.battles.toLocaleString()}</span>
-                      <span
-                        class="ranked-ships__ship-wr"
-                        style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
-                      >
-                        {s.winrate.toFixed(1)}%
-                      </span>
-                      <span class="ranked-ships__ship-dmg">
-                        {s.battles > 0 && s.avgDamage <= 0
-                          ? t("stats.dataAnomaly")
-                          : Math.round(s.avgDamage).toLocaleString()}
-                      </span>
-                      <span class="ranked-ships__ship-kd">
-                        {(s.frags / Math.max(1, s.battles)).toFixed(2)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+              /* Ship rows — hikari's HkScrollContainer owns the scrollbar
+                 (auto-hiding overlay track under the rows); the row rhythm moved
+                 to __list-inner so it scrolls with them. Desktop fits the
+                 viewport untouched, the phone block floors each row at one
+                 min-width and the table pans inside the sheet. */
+              <HkScrollContainer class="ranked-ships__list" axis="horizontal">
+                <div class="ranked-ships__list-inner">
+                  {filteredShips.value.map((s) => {
+                    const meta = metaOf(s.shipId);
+                    // Per-ship badge, not the class-level code: cruisers split
+                    // CA vs CL off the baked main-gun caliber of THIS row's
+                    // ship (unbaked oddities keep the combined CA/CL code —
+                    // see shipTypeBadgeShort). Same badge vocabulary as the
+                    // hover card, so the hint explains exactly the code the
+                    // pointer is over.
+                    const code = shipTypeBadgeShort(meta?.type, s.shipId);
+                    return (
+                      <div class="ranked-ships__ship" key={s.shipId}>
+                        <span class="ranked-ships__ship-ico">
+                          {/* ONE class-glyph provider: the ranked row's icon is
+                              the shared BattleIcon (vector art), not a local
+                              img copy of the same URL. */}
+                          {meta?.type ? (
+                            <BattleIcon type={meta.type} variant="plain" size={22} />
+                          ) : null}
+                        </span>
+                        <span
+                          class="ranked-ships__ship-type"
+                          data-hint-card={shipTypeHintCard(code)}
+                        >
+                          {code}
+                        </span>
+                        <em class="ranked-ships__ship-tier">
+                          {meta?.tier ? tierToRoman(meta.tier) : ""}
+                        </em>
+                        <span class="ranked-ships__ship-name">{displayName(s)}</span>
+                        <span class="ranked-ships__ship-battles">{s.battles.toLocaleString()}</span>
+                        <span
+                          class="ranked-ships__ship-wr"
+                          style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
+                        >
+                          {s.winrate.toFixed(1)}%
+                        </span>
+                        <span class="ranked-ships__ship-dmg">
+                          {s.battles > 0 && s.avgDamage <= 0
+                            ? t("stats.dataAnomaly")
+                            : Math.round(s.avgDamage).toLocaleString()}
+                        </span>
+                        <span class="ranked-ships__ship-kd">
+                          {(s.frags / Math.max(1, s.battles)).toFixed(2)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </HkScrollContainer>
             )}
           </>
         )}

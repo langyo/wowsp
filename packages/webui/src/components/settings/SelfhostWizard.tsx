@@ -23,6 +23,7 @@ import {
   HkInput,
   HkModal,
   HkQrCode,
+  HkScrollContainer,
   HkSpinner,
   HkStepFlow,
 } from "@celestia-island/hikari";
@@ -383,27 +384,32 @@ export default defineComponent({
 
               {/* Streamed output (wowsp://gateway-selfhost buffered in the
                   store) — a plain mono pane; the lines are the wizard's
-                  progress events (§7.5). */}
+                  progress events (§7.5). The pane rides hikari's
+                  HkScrollContainer (the theme.scss scroll policy): the
+                  10rem cap stays on the container root and the streamed
+                  lines scroll inside its viewport. */}
               <div class="selfhost-wizard__log">
                 <p class="selfhost-wizard__log-title">{t("gateway.selfhostLog")}</p>
-                <div class="selfhost-wizard__log-body">
-                  {logRows.value.length === 0 ? (
-                    <p class="selfhost-wizard__log-empty">{t("gateway.selfhostLogEmpty")}</p>
-                  ) : (
-                    logRows.value.map((row, i) => (
-                      <p
-                        key={i}
-                        class={[
-                          "selfhost-wizard__log-line",
-                          row.stream === "stderr" ? "is-err" : "",
-                          row.stream === "done" ? "is-done" : "",
-                        ]}
-                      >
-                        {row.line || (row.stream === "done" ? t("gateway.selfhostStepDone") : "")}
-                      </p>
-                    ))
-                  )}
-                </div>
+                <HkScrollContainer class="selfhost-wizard__log-body">
+                  <div class="selfhost-wizard__log-inner">
+                    {logRows.value.length === 0 ? (
+                      <p class="selfhost-wizard__log-empty">{t("gateway.selfhostLogEmpty")}</p>
+                    ) : (
+                      logRows.value.map((row, i) => (
+                        <p
+                          key={i}
+                          class={[
+                            "selfhost-wizard__log-line",
+                            row.stream === "stderr" ? "is-err" : "",
+                            row.stream === "done" ? "is-done" : "",
+                          ]}
+                        >
+                          {row.line || (row.stream === "done" ? t("gateway.selfhostStepDone") : "")}
+                        </p>
+                      ))
+                    )}
+                  </div>
+                </HkScrollContainer>
               </div>
             </div>
           ),

@@ -17,7 +17,7 @@ import { healAntennaGaps } from "@/features/holographic/antennaHeal";
 import { deinterleaveGeometry } from "@/features/holographic/deinterleave";
 import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
-import { HkSelectPanel, HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
+import { HkScrollContainer, HkSelectPanel, HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
 import { readStageThemeMode, useImage, watchStageThemeMode, type StageThemeMode } from "@wowsp/holo";
 import { asModelChainError, isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCandidates, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
@@ -2078,12 +2078,15 @@ export default defineComponent({
                 </div>
               ) : null}
               {errorMsg.value ? (
-                <div class="ship-stage__overlay ship-stage__overlay--error">
-                  {/* fill: the overlay is a definite-height flex pane, so
-                      the card compresses its raw-details frame to FIT the
-                      stage instead of being scrolled past it by a native
-                      scrollbar; the frame's hikari overlay scrollbar takes
-                      over below its floor. See ShipStage.scss (`&--error`). */}
+                /* The overlay IS the scroll host (hikari HkScrollContainer):
+                   its viewport is the old definite-height flex pane, so the
+                   card keeps its `fill` seating (the raw-details frame
+                   compresses to FIT the 320px stage, and its own hikari
+                   overlay bar takes over below the floor), while the pane's
+                   pathological-geometry escape now carries hikari's overlay
+                   bar instead of a hidden native one. See ShipStage.scss
+                   (`&--error`). */
+                <HkScrollContainer class="ship-stage__overlay ship-stage__overlay--error">
                   <ErrorCard
                     fill
                     error={errorMsg.value}
@@ -2105,7 +2108,7 @@ export default defineComponent({
                         : undefined
                     }
                   />
-                </div>
+                </HkScrollContainer>
               ) : null}
               {viewMode.value === "3d" && showArmor.value && armorReady.value ? (
                 <>

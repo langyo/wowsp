@@ -1005,87 +1005,94 @@ export default defineComponent({
                         : t("dashboard.noShipsMatchFilter")}
                     </p>
                   ) : (
-                    <div class="lookup-view__shiplist">
-                      {/* Column captions — the dashboard's table carries
-                          the same head row, so both water tables explain
-                          their number columns identically. The leading
-                          spacers mirror the row's icon/type/tier slots
-                          so the name caption sits over the name. */}
-                      <div class="lookup-view__shiplist-head">
-                        <span class="lookup-view__head-lead" />
-                        <span class="lookup-view__head-lead lookup-view__head-lead--wide" />
-                        <span class="lookup-view__head-lead lookup-view__head-lead--wide" />
-                        <span class="lookup-view__head-name">{t("stats.ships")}</span>
-                        <span class="lookup-view__head-num">{t("stats.battles")}</span>
-                        <span class="lookup-view__head-num">{t("stats.winrate")}</span>
-                        <span class="lookup-view__head-num lookup-view__head-num--dmg">{t("stats.avgDamage")}</span>
-                        <span class="lookup-view__head-num lookup-view__head-num--kd">{t("stats.kdRatio")}</span>
-                        <span class="lookup-view__head-date">{t("dashboard.lastBattle")}</span>
+                    /* Ship table — hikari's HkScrollContainer owns the scrollbar
+                       (auto-hiding overlay track along the table's bottom edge); the
+                       column rhythm moved to __shiplist-inner so it scrolls with the
+                       rows. The phone rules keep the true-table geometry (head and rows
+                       share one min-width) while the desktop list fits its viewport. */
+                    <HkScrollContainer class="lookup-view__shiplist" axis="horizontal">
+                      <div class="lookup-view__shiplist-inner">
+                        {/* Column captions — the dashboard's table carries
+                            the same head row, so both water tables explain
+                            their number columns identically. The leading
+                            spacers mirror the row's icon/type/tier slots
+                            so the name caption sits over the name. */}
+                        <div class="lookup-view__shiplist-head">
+                          <span class="lookup-view__head-lead" />
+                          <span class="lookup-view__head-lead lookup-view__head-lead--wide" />
+                          <span class="lookup-view__head-lead lookup-view__head-lead--wide" />
+                          <span class="lookup-view__head-name">{t("stats.ships")}</span>
+                          <span class="lookup-view__head-num">{t("stats.battles")}</span>
+                          <span class="lookup-view__head-num">{t("stats.winrate")}</span>
+                          <span class="lookup-view__head-num lookup-view__head-num--dmg">{t("stats.avgDamage")}</span>
+                          <span class="lookup-view__head-num lookup-view__head-num--kd">{t("stats.kdRatio")}</span>
+                          <span class="lookup-view__head-date">{t("dashboard.lastBattle")}</span>
+                        </div>
+                        {filteredShips.value.map((s) => {
+                          const off = shipOfflineEntry(s.shipId);
+                          // Encyclopedia type first (the offline DB misses
+                          // post-bake ships), the offline entry backfills.
+                          const type = infoOf(s.shipId)?.type || off?.type || "";
+                          const badge = shipTypeBadgeShort(type || undefined, s.shipId);
+                          return (
+                            <div
+                              class="lookup-view__ship lookup-view__ship--link"
+                              key={s.shipId}
+                              role="button"
+                              tabindex={0}
+                              data-hint={t("ships.detail.openHint")}
+                              onClick={() => shipDetail.openShip(s.shipId, displayName(s), result.value!.realm)}
+                              onKeydown={(e: KeyboardEvent) => {
+                                if (e.key !== "Enter" && e.key !== " ") return;
+                                e.preventDefault();
+                                shipDetail.openShip(s.shipId, displayName(s), result.value!.realm);
+                              }}
+                            >
+                              <span class="lookup-view__ship-ico">
+                                <BattleIcon type={type} variant="white" size={18} />
+                              </span>
+                              <span
+                                class="lookup-view__ship-type"
+                                data-hint-card={shipTypeHintCard(badge)}
+                              >
+                                {badge}
+                              </span>
+                              <em class="lookup-view__ship-tier">
+                                {off?.tier != null ? tierToRoman(off.tier) : ""}
+                              </em>
+                              <span class="lookup-view__ship-name">{displayName(s)}</span>
+                              <span class="lookup-view__ship-battles">{s.battles.toLocaleString()}</span>
+                              <span
+                                class="lookup-view__ship-wr"
+                                style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
+                              >
+                                {s.winrate.toFixed(1)}%
+                              </span>
+                              <span class="lookup-view__ship-dmg">
+                                {/* Battles with zero damage are broken snapshot
+                                    data — same anomaly flag as the ship modal. */}
+                                {s.battles > 0 && s.avgDamage <= 0
+                                  ? t("stats.dataAnomaly")
+                                  : Math.round(s.avgDamage).toLocaleString()}
+                              </span>
+                              <span class="lookup-view__ship-kd">
+                                {(s.frags / Math.max(1, s.battles)).toFixed(2)}
+                              </span>
+                              <span class="lookup-view__ship-date">
+                                {/* Locale-ordered Y/M/D capsule — hikari's
+                                    HkDateTag business part; the em-dash keeps
+                                    the no-data fallback. */}
+                                {s.lastBattleTime ? (
+                                  <HkDateTag value={s.lastBattleTime * 1000} />
+                                ) : (
+                                  "—"
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
-                      {filteredShips.value.map((s) => {
-                        const off = shipOfflineEntry(s.shipId);
-                        // Encyclopedia type first (the offline DB misses
-                        // post-bake ships), the offline entry backfills.
-                        const type = infoOf(s.shipId)?.type || off?.type || "";
-                        const badge = shipTypeBadgeShort(type || undefined, s.shipId);
-                        return (
-                          <div
-                            class="lookup-view__ship lookup-view__ship--link"
-                            key={s.shipId}
-                            role="button"
-                            tabindex={0}
-                            data-hint={t("ships.detail.openHint")}
-                            onClick={() => shipDetail.openShip(s.shipId, displayName(s), result.value!.realm)}
-                            onKeydown={(e: KeyboardEvent) => {
-                              if (e.key !== "Enter" && e.key !== " ") return;
-                              e.preventDefault();
-                              shipDetail.openShip(s.shipId, displayName(s), result.value!.realm);
-                            }}
-                          >
-                            <span class="lookup-view__ship-ico">
-                              <BattleIcon type={type} variant="white" size={18} />
-                            </span>
-                            <span
-                              class="lookup-view__ship-type"
-                              data-hint-card={shipTypeHintCard(badge)}
-                            >
-                              {badge}
-                            </span>
-                            <em class="lookup-view__ship-tier">
-                              {off?.tier != null ? tierToRoman(off.tier) : ""}
-                            </em>
-                            <span class="lookup-view__ship-name">{displayName(s)}</span>
-                            <span class="lookup-view__ship-battles">{s.battles.toLocaleString()}</span>
-                            <span
-                              class="lookup-view__ship-wr"
-                              style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
-                            >
-                              {s.winrate.toFixed(1)}%
-                            </span>
-                            <span class="lookup-view__ship-dmg">
-                              {/* Battles with zero damage are broken snapshot
-                                  data — same anomaly flag as the ship modal. */}
-                              {s.battles > 0 && s.avgDamage <= 0
-                                ? t("stats.dataAnomaly")
-                                : Math.round(s.avgDamage).toLocaleString()}
-                            </span>
-                            <span class="lookup-view__ship-kd">
-                              {(s.frags / Math.max(1, s.battles)).toFixed(2)}
-                            </span>
-                            <span class="lookup-view__ship-date">
-                              {/* Locale-ordered Y/M/D capsule — hikari's
-                                  HkDateTag business part; the em-dash keeps
-                                  the no-data fallback. */}
-                              {s.lastBattleTime ? (
-                                <HkDateTag value={s.lastBattleTime * 1000} />
-                              ) : (
-                                "—"
-                              )}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    </HkScrollContainer>
                   )}
                 </div>
               </div>

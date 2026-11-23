@@ -388,12 +388,19 @@
     color: rgb(var(--color-warning, var(--color-accent)));
   }
 
+  /* The capped conflict-path list is hikari's HkScrollContainer (the
+     theme.scss scroll policy): the shared overlay track draws the scroll
+     chrome, the 18rem cap stays on the container root, and the rows scroll
+     inside its viewport. */
   &__paths {
+    max-height: 18rem;
+  }
+
+  /* Row rhythm lives INSIDE the viewport, off the capped container root. */
+  &__paths-inner {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
-    max-height: 18rem;
-    overflow: auto;
   }
 
   &__path {

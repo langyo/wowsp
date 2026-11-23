@@ -28,6 +28,7 @@ import {
   HkCaptchaWidget,
   HkInput,
   HkModal,
+  HkScrollContainer,
   HkSpinner,
 } from "@celestia-island/hikari";
 import {
@@ -203,49 +204,56 @@ export default defineComponent({
             />
           </div>
         ) : (
-          <div class="gateway-live__waiting">
-            <div class={["gateway-live__hero", `gateway-live__hero--${heroVoice.value.tone}`]}>
-              {heroMedia()}
-              <h3 class="gateway-live__hero-title">{heroVoice.value.title}</h3>
-              <p class="gateway-live__hero-hint">{heroVoice.value.hint}</p>
-              {dialing.value && !connected.value ? (
-                <p class="gateway-live__hero-busy">
-                  <HkSpinner size="xs" tone="current" />
-                  {t("gateway.connecting")}
-                </p>
-              ) : null}
-              {/* Connect / disconnect — viewing is free; the button owns
-                  the socket (§6.1). */}
-              <div class="gateway-live__hero-cta">
-                {connected.value ? (
-                  <HkButton
-                    block
-                    size="lg"
-                    variant="secondary"
-                    onClick={() => void live.disconnect()}
-                  >
-                    <Power size={15} />
-                    {t("gateway.disconnect")}
-                  </HkButton>
-                ) : (
-                  <HkButton
-                    block
-                    size="lg"
-                    variant="primary"
-                    loading={live.connecting.value}
-                    disabled={!live.route.value || live.connecting.value}
-                    onClick={() => void live.connect()}
-                  >
-                    <RefreshCw size={15} />
-                    {t("gateway.connect")}
-                  </HkButton>
-                )}
+          /* The waiting hero: hikari's HkScrollContainer owns the scrollbar
+             (auto-hiding overlay track at the region's edge); the hero keeps
+             its margin:auto centering inside the viewport, so it centers
+             while it fits and scrolls instead of squashing on a short
+             viewport. */
+          <HkScrollContainer class="gateway-live__waiting">
+            <div class="gateway-live__waiting-inner">
+              <div class={["gateway-live__hero", `gateway-live__hero--${heroVoice.value.tone}`]}>
+                {heroMedia()}
+                <h3 class="gateway-live__hero-title">{heroVoice.value.title}</h3>
+                <p class="gateway-live__hero-hint">{heroVoice.value.hint}</p>
+                {dialing.value && !connected.value ? (
+                  <p class="gateway-live__hero-busy">
+                    <HkSpinner size="xs" tone="current" />
+                    {t("gateway.connecting")}
+                  </p>
+                ) : null}
+                {/* Connect / disconnect — viewing is free; the button owns
+                    the socket (§6.1). */}
+                <div class="gateway-live__hero-cta">
+                  {connected.value ? (
+                    <HkButton
+                      block
+                      size="lg"
+                      variant="secondary"
+                      onClick={() => void live.disconnect()}
+                    >
+                      <Power size={15} />
+                      {t("gateway.disconnect")}
+                    </HkButton>
+                  ) : (
+                    <HkButton
+                      block
+                      size="lg"
+                      variant="primary"
+                      loading={live.connecting.value}
+                      disabled={!live.route.value || live.connecting.value}
+                      onClick={() => void live.connect()}
+                    >
+                      <RefreshCw size={15} />
+                      {t("gateway.connect")}
+                    </HkButton>
+                  )}
+                </div>
+                {!live.route.value ? (
+                  <p class="gateway-live__hero-foot">{t("gateway.heroNoRoute")}</p>
+                ) : null}
               </div>
-              {!live.route.value ? (
-                <p class="gateway-live__hero-foot">{t("gateway.heroNoRoute")}</p>
-              ) : null}
             </div>
-          </div>
+          </HkScrollContainer>
         )}
 
         {/* Captcha bottom sheet — mounted only while the flow demands it;

@@ -275,6 +275,18 @@
   }
 
   &__row {
+    /* The ROW is hikari's HkScrollContainer (theme.scss scroll policy): it
+       keeps the row's seat in the tier band beside the pinned label, while
+       the plate grid lives inside its viewport (__plates) and pans there on
+       a phone-width sheet — no platform bar, the overlay track is the
+       chrome. Its default flex sizing leaves the row at its content width
+       on desktop, so nothing about the desktop tier rows moves. */
+    & > .hk-scroll-container-viewport {
+      overscroll-behavior-x: contain;
+    }
+  }
+
+  &__plates {
     /* Fixed 56px tracks with one track per class-tree column — the template
        is set inline by BuildPlanner (auto-fill let short rows drift out of
        alignment with the tier above). No flex-grow: the empty tail of the
@@ -283,6 +295,7 @@
     justify-content: start;
     gap: 0.45rem 0.35rem;
     align-content: start;
+    width: max-content;
   }
 
   /* The game refuses a build that skips a tier row while a higher row is
@@ -1081,15 +1094,36 @@
   gap: 0.5rem;
 }
 
+/* The equipment chain is wider than the pane at every breakpoint (stock
+   anchor + one 56px tier per module + the next-tier column), so it rides
+   hikari's HkScrollContainer (theme.scss scroll policy): the ROOT keeps the
+   framed surface, the row stack pans inside the viewport, and the overlay
+   track — not a platform bar — is the scroll chrome. */
 .planner-v__parts-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  padding: 0.65rem;
   background: rgb(var(--color-bg));
   border: 1px solid rgb(var(--color-border) / 15%);
   border-radius: var(--radius-sm);
-  overflow-x: auto;
+
+  /* The frame's inset belongs to the scroll surface: the pre-migration pane
+     WAS the scroller, so the chain's leading inset and its pan origin sit on
+     the viewport (a root padding would inset the scrollport itself and
+     shift the pan surface). Horizontal overscroll containment keeps a pan
+     past the chain from chaining into the modal body behind the sheet. */
+  & > .hk-scroll-container-viewport {
+    padding: 0.65rem;
+    overscroll-behavior-x: contain;
+  }
+}
+
+/* Row stack inside the viewport: min-width: max-content sizes the wrapper to
+   the WIDEST row, so every row still spans the whole chain (rows stretch on
+   the cross axis exactly as the framed pane sized them before) and the pan
+   extent is the chain itself — never the viewport's own leftover width. */
+.planner-v__parts-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: max-content;
 }
 
 .planner-v__parts-row {
@@ -1320,7 +1354,7 @@
    - The skill tier rows pin fixed 56px columns inline (game-style plates;
      ribbons/anchors are tuned to that box, so the tiles must not shrink).
      Six columns plus the tier label need ~410px, wider than the sheet —
-     the ROW itself turns into an in-place horizontal scroller so the
+     the ROW's HkScrollContainer viewport pans the plates in place so the
      tier label stays pinned beside it instead of the grid's right edge
      clipping away (same trade as RankedShipTable's rows).
    - The cost rows' fixed 72px slot column wraps localized labels
@@ -1328,9 +1362,10 @@
      its content on phones so label and price keep one line each. */
 @media (max-width: 767px) {
   .skill-tier-v__row {
+    /* Fills the room left beside the pinned tier label; the viewport then
+       pans the fixed 56px plate grid (overlay track, no native bar). */
     min-width: 0;
     flex: 1 1 auto;
-    overflow-x: auto;
   }
 
   .planner-v__cost-row {

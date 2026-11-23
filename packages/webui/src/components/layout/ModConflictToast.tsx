@@ -1,5 +1,5 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { HkModal, showBlockingToast } from "@celestia-island/hikari";
+import { HkModal, HkScrollContainer, showBlockingToast } from "@celestia-island/hikari";
 
 import {
   api,
@@ -205,27 +205,33 @@ export default defineComponent({
                     {t("modConflict.modal.empty")}
                   </p>
                 ) : (
-                  <div class="mod-conflict-modal__list">
-                    {rep.problems.map((problem, index) => (
-                      <div class="mod-conflict-modal__problem" key={index}>
-                        <p class="mod-conflict-modal__head">
-                          <span class="mod-conflict-modal__kind">
-                            {kindLabel(problem.kind)}
-                          </span>
-                          <span class="mod-conflict-modal__target">
-                            {problem.asset ?? problem.path ?? ""}
-                          </span>
-                        </p>
-                        {problem.files.length > 0 ? (
-                          <p class="mod-conflict-modal__files">
-                            {t("modConflict.modal.files", {
-                              files: problem.files.join(", "),
-                            })}
+                  /* The capped problem list: hikari's HkScrollContainer owns
+                     the scrollbar (auto-hiding overlay track at the list
+                     edge); the rows scroll inside its viewport, so the
+                     platform bar never paints over the modal. */
+                  <HkScrollContainer class="mod-conflict-modal__list">
+                    <div class="mod-conflict-modal__rows">
+                      {rep.problems.map((problem, index) => (
+                        <div class="mod-conflict-modal__problem" key={index}>
+                          <p class="mod-conflict-modal__head">
+                            <span class="mod-conflict-modal__kind">
+                              {kindLabel(problem.kind)}
+                            </span>
+                            <span class="mod-conflict-modal__target">
+                              {problem.asset ?? problem.path ?? ""}
+                            </span>
                           </p>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
+                          {problem.files.length > 0 ? (
+                            <p class="mod-conflict-modal__files">
+                              {t("modConflict.modal.files", {
+                                files: problem.files.join(", "),
+                              })}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </HkScrollContainer>
                 )}
                 <p class="mod-conflict-modal__hint">
                   {t("modConflict.modal.hint")}

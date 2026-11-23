@@ -18,6 +18,7 @@ import {
   HkButton,
   HkJsonTree,
   HkModal,
+  HkScrollContainer,
   HkSelect,
   HkSettingsHint,
   HkTag,
@@ -344,10 +345,13 @@ export default defineComponent({
               </div>
             ) : null}
 
+            {/* The trace boxes are hikari scroll containers (the theme.scss
+               scroll policy): each keeps its 14rem cap on the container
+               root while its content scrolls inside the viewport. */}
             {resultBox(t("settings.chatTranslate.testSystemPrompt"), result, () => (
-              <pre class="hk-selectable chat-settings__test-prompt">
+              <HkScrollContainer class="hk-selectable chat-settings__test-prompt">
                 {(result && result.systemPrompt) || t("settings.chatTranslate.testNoResult")}
-              </pre>
+              </HkScrollContainer>
             ))}
 
             {resultBox(t("settings.chatTranslate.testInputPayload"), result, () => {
@@ -360,27 +364,29 @@ export default defineComponent({
               );
               if (!isJsonText(jsonLine)) {
                 return (
-                  <pre class="hk-selectable chat-settings__test-prompt">
+                  <HkScrollContainer class="hk-selectable chat-settings__test-prompt">
                     {result?.userPayload ?? ""}
-                  </pre>
+                  </HkScrollContainer>
                 );
               }
               return (
-                <div class="hk-selectable chat-settings__test-json">
+                <HkScrollContainer class="hk-selectable chat-settings__test-json">
                   <HkJsonTree text={jsonLine} maxDepth={8} />
                   {rest !== "" ? (
-                    <pre class="hk-selectable chat-settings__test-prompt">{rest}</pre>
+                    <HkScrollContainer class="hk-selectable chat-settings__test-prompt">
+                      {rest}
+                    </HkScrollContainer>
                   ) : null}
-                </div>
+                </HkScrollContainer>
               );
             })}
 
             {resultBox(t("settings.chatTranslate.testResponsePayload"), result, () => {
               if (result && result.response != null) {
                 return (
-                  <div class="hk-selectable chat-settings__test-json">
+                  <HkScrollContainer class="hk-selectable chat-settings__test-json">
                     <HkJsonTree value={result.response} maxDepth={8} />
-                  </div>
+                  </HkScrollContainer>
                 );
               }
               const raw = result?.responseRaw ?? "";
@@ -390,13 +396,15 @@ export default defineComponent({
                 // containers only, so a primitive tree would leave the box
                 // blank.
                 return (
-                  <div class="hk-selectable chat-settings__test-json">
+                  <HkScrollContainer class="hk-selectable chat-settings__test-json">
                     {isJsonContainerText(raw) ? (
                       <HkJsonTree text={raw} maxDepth={8} />
                     ) : (
-                      <pre class="hk-selectable chat-settings__test-prompt">{raw}</pre>
+                      <HkScrollContainer class="hk-selectable chat-settings__test-prompt">
+                        {raw}
+                      </HkScrollContainer>
                     )}
-                  </div>
+                  </HkScrollContainer>
                 );
               }
               return <HkSettingsHint>{t("settings.chatTranslate.testNoResult")}</HkSettingsHint>;

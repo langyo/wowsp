@@ -118,6 +118,15 @@ vi.mock("@celestia-island/hikari", () => {
     },
   });
   const HkSpinnerStub = defineComponent({ name: "HkSpinner", render: () => null });
+  // The error/loading body frame is a HkScrollContainer; the wiring test
+  // reads its copy, so the stub renders the slot through a plain div (the
+  // same pass-through shape ResourcesView's suite uses).
+  const HkScrollContainerStub = defineComponent({
+    name: "HkScrollContainer",
+    setup(_, { slots }) {
+      return () => h("div", { class: "hk-scroll-container-stub" }, slots.default?.() ?? []);
+    },
+  });
   // ErrorCard reads the breakpoint in its setup; the stub keeps the test
   // on the desktop layout.
   const useBreakpoint = () => ({ isMobile: { value: false } });
@@ -137,6 +146,7 @@ vi.mock("@celestia-island/hikari", () => {
     HkModal: HkModalStub,
     HkButton: HkButtonStub,
     HkSpinner: HkSpinnerStub,
+    HkScrollContainer: HkScrollContainerStub,
     useBreakpoint,
     HkJsonTree: HkJsonTreeStub,
     HkErrorLanding: HkErrorLandingStub,

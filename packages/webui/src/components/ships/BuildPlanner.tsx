@@ -10,7 +10,7 @@ import {
 } from "vue";
 import { AlertTriangle, Ban, Coins, Lock, RotateCcw, Wrench, X } from "@lucide/vue";
 
-import { HkButton, HkPopover, HkTabs } from "@celestia-island/hikari";
+import { HkButton, HkPopover, HkScrollContainer, HkTabs } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import type { HintTag } from "@/composables/globalTooltip";
@@ -1046,13 +1046,20 @@ export default defineComponent({
               ) : null}
             </div>
             {/* Fixed column template per class — auto-fill let short rows
-                drift out of alignment with the tier above. */}
-            <div
-              class="skill-tier-v__row"
-              style={{ gridTemplateColumns: `repeat(${columns}, 56px)` }}
-            >
-              {cells}
-            </div>
+                drift out of alignment with the tier above. The ROW is hikari's
+                HkScrollContainer (theme.scss scroll policy): it keeps its
+                flex seat beside the tier label, the fixed 56px plate grid
+                lives inside its viewport, and a phone-width sheet pans the
+                plates in place under the overlay track instead of clipping
+                the grid's right edge. */}
+            <HkScrollContainer class="skill-tier-v__row" axis="horizontal">
+              <div
+                class="skill-tier-v__plates"
+                style={{ gridTemplateColumns: `repeat(${columns}, 56px)` }}
+              >
+                {cells}
+              </div>
+            </HkScrollContainer>
             {tierGaps.value.has(tier) ? (
               <span class="skill-tier-v__warn">
                 <AlertTriangle size={12} />
@@ -1612,9 +1619,15 @@ export default defineComponent({
       return (
         <div class="planner-v__parts">
           <p class="planner-v__note">{t("ships.parts.intro")}</p>
-          <div class="planner-v__parts-body">
-            {panelModel.rows.map((row, index) => renderPartsRow(row, index, panelModel))}
-          </div>
+          {/* The equipment chain is wider than the pane at every breakpoint:
+              hikari's HkScrollContainer owns the horizontal pan (theme.scss
+              scroll policy); the row stack and its rhythm sit inside the
+              viewport, the root keeps the framed surface. */}
+          <HkScrollContainer class="planner-v__parts-body" axis="horizontal">
+            <div class="planner-v__parts-rows">
+              {panelModel.rows.map((row, index) => renderPartsRow(row, index, panelModel))}
+            </div>
+          </HkScrollContainer>
           <p class="planner-v__note planner-v__parts-placeholder">
             {t("ships.parts.placeholderNote")}
           </p>

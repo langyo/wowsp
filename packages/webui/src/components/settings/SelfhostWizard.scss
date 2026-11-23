@@ -126,13 +126,18 @@
     color: rgb(var(--color-muted) / 75%);
   }
 
+  /* The streamed-output pane rides hikari's HkScrollContainer (the
+     theme.scss scroll policy): the 10rem cap and the painted frame stay on
+     the container root, while the mono inset scrolls inside its viewport. */
   &__log-body {
     max-height: 10rem;
-    overflow-y: auto;
-    padding: var(--space-8);
     border-radius: var(--radius-sm, 6px);
     border: 1px solid rgb(var(--color-border) / 20%);
     background: rgb(var(--color-background) / 60%);
+  }
+
+  &__log-inner {
+    padding: var(--space-8);
     font-family: var(--font-mono);
     font-size: var(--text-3xs, 0.625rem);
     line-height: 1.6;

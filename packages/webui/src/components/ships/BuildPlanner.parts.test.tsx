@@ -98,6 +98,11 @@ vi.mock("@celestia-island/hikari", () => {
   return {
     HkButton: stub("HkButton"),
     HkTabs: stub("HkTabs"),
+    // The equipment chain and the skill tier rows mount hikari's
+    // HkScrollContainer; the stub renders its slot in place (the rows/plates
+    // the assertions query live inside its viewport) and lets the host class
+    // ride its root like the real component's.
+    HkScrollContainer: stub("HkScrollContainer"),
     // Hover-popover stub mirroring the real surface's visible contract: the
     // panel div teleports to body while open (the flag-card tests query it
     // there, like the real overlay-root teleport).
