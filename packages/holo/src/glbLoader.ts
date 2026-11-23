@@ -1,8 +1,23 @@
 /**
- * GLB loading for the site's live renderer: GLTFLoader + meshopt decoder
- * (site assets are re-baked with `gltf-transform optimize --compress meshopt`,
- * see scripts/bake_site_replay.py). Also tolerates the app's baked GLBs'
- * NUL-byte JSON-chunk padding, same as the app's modelLoader.
+ * GLB loading shared by every three.js surface — the app's holographic
+ * ship stage and the marketing site's replay/ship showcases. The app ships
+ * a richer chain-walking loader of its own (features/holographic/
+ * modelLoader.ts); everything else goes through here.
+ *
+ * Two hard-won rules:
+ *
+ *  1. GLTFLoader + meshopt decoder — baked assets are compressed with
+ *     `gltf-transform optimize --compress meshopt` (see
+ *     scripts/bake_site_replay.py).
+ *  2. NEVER hand GLTFLoader a `blob:` URL. The loader re-FETCHES whatever
+ *     URL it is given, and the deployed site's CSP allows no `blob:` in
+ *     connect-src (packages/website/src/res/_headers, mirrored in
+ *     relay-core) — the fetch was silently blocked, which dropped the whole
+ *     terrain + every ship model on the site's homepage while the JSON/PNG
+ *     assets kept loading. The URL is fetched HERE and the ArrayBuffer is
+ *     handed straight to `parseAsync`: no second request, no CSP edge, and
+ *     one less round-trip. It also tolerates the app's baked GLBs' NUL-byte
+ *     JSON-chunk padding, same as the app's modelLoader.
  */
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -29,15 +44,13 @@ function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
   return buffer;
 }
 
+/** Fetch a GLB and parse it in memory. The returned group is caller-owned
+ *  (dispose its geometries/materials); concurrent calls are safe — every
+ *  parse builds its own GLTFParser. */
 export async function loadGlb(url: string): Promise<THREE.Group> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
-  const fixed = fixGlbPadding(await resp.arrayBuffer());
-  const blobUrl = URL.createObjectURL(new Blob([fixed], { type: "model/gltf-binary" }));
-  try {
-    const gltf = await getLoader().loadAsync(blobUrl);
-    return gltf.scene;
-  } finally {
-    URL.revokeObjectURL(blobUrl);
-  }
+  const buffer = fixGlbPadding(await resp.arrayBuffer());
+  const gltf = await getLoader().parseAsync(buffer, "");
+  return gltf.scene;
 }

@@ -914,8 +914,8 @@ function getLoader(): Promise<GLTFLoader> {
       // optimize_glbs.py — the decoder only engages when the
       // EXT_meshopt_compression extension is present, so legacy
       // uncompressed packs keep loading unchanged. Same wiring as the
-      // site's replay3d loader (packages/website glb.ts) and
-      // packages/holo's glbLoader.
+      // shared loader the marketing site's showcases use
+      // (@wowsp/holo's glbLoader).
       //
       // The decoder module is imported DYNAMICALLY, only when a GLB is
       // actually about to parse: it instantiates its embedded WASM at
