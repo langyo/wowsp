@@ -5,12 +5,11 @@ import {
   HoloScorebar, HoloLabel, HoloShipCard, drawHoloMinimap, drawShipGlyph, registerHoloShipIcons,
   setMinimapArtImage, holoShipIconUrl, captureSpeedPerSec, captureSecondsRemaining, formatEta,
   makeShipHoloMaterial, makeTerrainHoloMaterial, tickHolo, useImage, shipClassTargetLen,
-  readStageThemeMode, watchStageThemeMode,
+  readStageThemeMode, watchStageThemeMode, loadGlb,
   type HoloBounds, type HoloCap, type HoloCapZone, type HoloHudState, type HoloShip,
   type HoloLabelData,
 } from "@wowsp/holo";
 import { HkSwitch } from "@celestia-island/hikari";
-import { loadGlb } from "./glb";
 import shipTypes from "@/data/shipTypes.json";
 import { ships as SHIP_DB, shipName } from "@/data/ships";
 import { siteBase } from "@/composables/siteBase";
