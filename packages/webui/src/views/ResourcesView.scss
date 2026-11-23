@@ -1,30 +1,20 @@
-// Mod Hub (Resources page) — master/detail in the replay page's shape: a
-// flush secondary sidebar owns the title row, the condition strips and the
-// filter stack above the scrolling row list; the right pane shows the
-// selected mod and carries its actions. Category accents follow the mod
-// taxonomy from docs/<lang>/designs/mod-formats.md — hue per kind on the
-// row tiles, neutral chrome otherwise.
+// Mod Hub (Resources page) — master/detail on the family's standard console
+// (HkMasterDetail): the flush 320px roster column owns the title row, the
+// condition strips and the filter stack above the scrolling row list; the
+// chrome-less detail region shows the selected mod and carries its actions.
+// Category accents follow the mod taxonomy from
+// docs/<lang>/designs/mod-formats.md — hue per kind on the row tiles,
+// neutral chrome otherwise.
 
 .resources-view {
-  /* Full-height flex row (the replay page's chain): the shell's page
-     wrapper hands the root a definite height, so the two columns size from
-     it and scroll internally instead of dragging the page. The sidebar
-     hugs the shell's edges — no page padding, the tint IS the page. */
-  display: flex;
+  /* Page wrapper only: it hands HkMasterDetail a definite height (the
+     component's root is `height: 100%`) and keeps the page-ready hook the
+     visual harness polls. Both columns' geometry — the roster track, its
+     hairline and surface tint, the detail region, each column's own
+     scroller — belongs to the component now, and the shell's page wrapper
+     already supplies the definite height. */
   height: 100%;
   min-height: 0;
-
-  &__side {
-    width: 320px;
-    flex: none;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    border-right: 1px solid rgb(var(--color-border) / 20%);
-    background: rgb(var(--color-surface));
-    background: rgb(var(--color-surface) / min(100%, calc(50% + 50% * var(--ui-opacity, 1))));
-    overflow: hidden;
-  }
 
   &__side-head {
     flex: none;
@@ -191,13 +181,14 @@
     text-overflow: ellipsis;
   }
 
-  /* The detail half: what the selected row is, and every action for it. */
+  /* The detail half's mount box: what the selected row is, and every action
+     for it. The region's inset is the component's own detail-body padding;
+     this box only lets the pane card fill the region. */
   &__main {
     flex: 1;
     min-width: 0;
     min-height: 0;
     display: flex;
-    padding: 1.25rem 1.25rem 1.25rem 1.5rem;
   }
 }
 
@@ -1818,33 +1809,13 @@
   }
 }
 
-/* ── Phone layout (≤767px): the pair stacks — the sidebar (its own tinted
-   band, list capped) above the pane — and the page scrolls as one; the
-   filter stack keeps its natural height. ── */
+/* ── Phone layout (≤767px) ─────────────────────────────────────────────
+   HkMasterDetail's narrow split owns the page: the roster takes the whole
+   width (its scroller is the column's own now) and the pane rides the
+   component's window form — the family docked sheet, whose body carries
+   the phone gutter and the safe-area clearance. Only the roster's and the
+   pane's CONTENT dressing is left here. ── */
 @media (max-width: 767px) {
-  .resources-view {
-    flex-direction: column;
-    /* The page scrolls in the shell's viewport; the root grows past the
-       wrapper's definite height instead of squeezing both columns. */
-    height: auto;
-    min-height: 100%;
-  }
-
-  .resources-view__side {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid rgb(var(--color-border) / 20%);
-  }
-
-  /* Bounded so a long list can't push the pane out of reach. */
-  .resources-view__side-scroll {
-    max-height: 46vh;
-  }
-
-  .resources-view__main {
-    padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
-  }
-
   /* Sidebar chrome drops to the phone vocabulary (12px gutters instead
      of the desktop head's 16-17px). */
   .resources-view__side-head {

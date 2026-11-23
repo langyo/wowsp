@@ -118,7 +118,12 @@ describe("Sidebar rail stylesheet contract", () => {
     // context) demotes the toggle's own local z, so the band must live on
     // the host, the elevation boundary. There is no bare peeking z rule
     // left to tie the elevation to the peek state.
-    expect(hostGeom).toContain("z-index: var(--hk-z-sidebar, 900)");
+    // The token is the DOCKED band since the upstream z-scale pass (hikari
+    // 0.55.464): a docked sidebar sits under the header/footer chrome
+    // bands, while --hk-z-sidebar 900 is the temporary DRAWER's layering —
+    // 20 still paints over the content column, which is what this contract
+    // needs.
+    expect(hostGeom).toContain("z-index: var(--hk-z-sidebar-docked, 20)");
     expect(css).not.toContain(".hk-sidebar-rail-host[data-peeking] {");
     // The peek shadow survives on the panel-scoped rules.
     expect(css).toContain(".hk-sidebar-rail-host[data-peeking] .hk-sidebar-rail-panel");

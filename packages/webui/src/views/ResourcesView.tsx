@@ -6,6 +6,7 @@ import {
   FolderOpen,
   FolderSync,
   ListTree,
+  MousePointerClick,
   Palette,
   Puzzle,
   RefreshCw,
@@ -19,12 +20,14 @@ import {
   HkConfirmDialog,
   HkExpansionPanel,
   HkIconButton,
+  HkMasterDetail,
   HkModal,
   HkScrollContainer,
   HkSpinner,
   HkSwitch,
   HkTabs,
   HMenu,
+  useBreakpoint,
 } from "@celestia-island/hikari";
 
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
@@ -75,15 +78,16 @@ import {
 import { kindLabel, localized } from "./resources/display";
 
 /**
- * Mod Hub (Resources page) — master/detail in the replay page's
- * secondary-sidebar shape.
+ * Mod Hub (Resources page) — master/detail on the family's standard console
+ * (hikari's HkMasterDetail, the shape the replay page's roster uses).
  *
- * The flush left sidebar owns the title row (with the ⋯ tool menu), the
+ * The flush left roster column owns the title row (with the ⋯ tool menu), the
  * condition strips, the count pill and the whole filter stack (big category,
  * source + tool row, chips) above the scrolling row list; the right pane
- * shows what the selected row is and carries every action for it — nothing is
- * hidden behind a modal, and the pane keeps a placeholder until something is
- * picked.
+ * shows what the selected row is and carries every action for it. On desktop
+ * nothing is hidden behind a modal and the pane keeps an empty state until
+ * something is picked; on a phone the component raises the pane as the
+ * family sheet instead, and closing it drops the selection.
  *
  * Online catalog: curated tool-type mods from `mod-index.json` (built from
  * GitHub Discussions by scripts/mod_hub_publish.py); install downloads the
@@ -99,6 +103,17 @@ export default defineComponent({
   name: "ResourcesView",
   setup() {
     const hub = useModHub();
+    // Viewport, not build target: HkMasterDetail's narrow split (its default
+    // 768 breakpoint IS this composable's `isMobile`) raises the pane in the
+    // family sheet on phones, and the sheet's close channel is bound there.
+    const { isMobile: phoneLayout } = useBreakpoint();
+    // The phone sheet's own dismissal state. Dismissing must NOT drop the
+    // selection: the window keeps its detail slot mounted through the exit
+    // motion, so a cleared selection would swap the mod's body for the empty
+    // pane (and collapse its height) while the sheet is still sliding away.
+    // `detailOpen` is muted instead, exactly like the replay page's sheet.
+    const paneDismissed = ref(false);
+    watch([hub.selection, hub.delistedHit], () => (paneDismissed.value = false));
   // Crash-suspect pinning (崩溃嫌疑置顶): rides the crash store quietly.
   const crashPins = useCrashPins(hub.gameRoot);
   // The collapsed launcher row's secondary window (the suspect rows used
@@ -277,588 +292,620 @@ export default defineComponent({
           }
         }
       })();
-      return (
-        <div class="resources-view">
-          {/* ── Master/detail in the replay page's secondary-sidebar shape:
-              the sidebar owns the title row, the condition strips, the count
-              pill and the whole filter stack above the scrolling list; the
-              pane shows what the selected row is. ── */}
-          <aside class="resources-view__side">
-            <div class="resources-view__side-head">
-              <div class="resources-view__side-head-row">
-                <h2 class="resources-view__side-title">{t("resources.title")}</h2>
-                <span class="resources-view__side-actions">
-                  {/* Tool menu: safe mode + the migration wizard — the ⋯
-                      button rides the title row like the replay list's head
-                      actions; refresh / folder-install ride the source row
-                      below as its trailing ghost pair. */}
-                  <span class="resources-view__tools" ref={hub.toolsAnchor}>
-                    <HkIconButton
-                      size={24}
-                      variant="ghost"
-                      data-hint={t("resources.toolsMenu")}
-                      onClick={() => (hub.toolsOpen.value = !hub.toolsOpen.value)}
-                    >
-                      <Ellipsis size={15} />
-                    </HkIconButton>
-                    <HMenu
-                      variant="popup"
-                      title={t("resources.toolsMenu")}
-                      open={hub.toolsOpen.value}
-                      anchorRef={hub.toolsAnchor.value}
-                      placement="bottom-end"
-                      items={[
-                        {
-                          key: "safe-enter",
-                          label: t("resources.safeModeEnter"),
-                          icon: ShieldCheck,
-                          disabled: !hub.gameRoot.value || hub.safeMode.value || hub.safeModeBusy.value,
-                        },
-                        {
-                          key: "safe-exit",
-                          label: t("resources.safeModeExit"),
-                          icon: Undo2,
-                          disabled: !hub.safeMode.value || hub.safeModeBusy.value,
-                        },
-                        {
-                          key: "purge-reinstall",
-                          label: t("resources.purgeReinstall"),
-                          icon: Trash2,
-                          disabled:
-                            !hub.gameRoot.value ||
-                            hub.safeMode.value ||
-                            hub.purgeBusy.value,
-                        },
-                        {
-                          key: "migrate",
-                          label: t("resources.staleMigrate"),
-                          icon: RefreshCw,
-                          disabled:
-                            !hub.gameRoot.value || hub.staleBins.value.length === 0 || wizard.migrating.value,
-                        },
-                        {
-                          key: "sync-all",
-                          label: t("resources.sync.action"),
-                          icon: FolderSync,
-                          disabled:
-                            !hub.gameRoot.value ||
-                            hub.clientCount.value < 2 ||
-                            hub.catalogLoading.value ||
-                            hub.recordsLoading.value ||
-                            hub.syncAllBusy.value,
-                        },
-                      ]}
-                      // HMenu select emits the item key itself as the first argument.
-                      onSelect={(key: string | number) => {
-                        hub.toolsOpen.value = false;
-                        if (key === "safe-enter") hub.safeModeAsk.value = "on";
-                        else if (key === "safe-exit") hub.safeModeAsk.value = "off";
-                        else if (key === "purge-reinstall") hub.purgeAsk.value = hub.foreignUnits.value.length > 0 ? "choice" : "simple";
-                        else if (key === "migrate") wizard.openMigrateWizard();
-                        else if (key === "sync-all") void hub.openSyncAll();
-                      }}
-                      onUpdate:open={(v: boolean) => (hub.toolsOpen.value = v)}
-                    />
-                  </span>
-                </span>
-              </div>
-
-              {/* Compact condition strip: only what NEEDS attention stays a
-                  banner — a missing install speaks the replay list's quiet
-                  no-client note, while safe mode / stale bins keep the
-                  banner chrome (both carry an action). Tooling lives in the
-                  ⋯ menu. */}
-              {!hub.gameRoot.value && (
-                <p class="resources-view__side-note">{t("resources.noGame")}</p>
-              )}
-
-              {hub.safeMode.value && hub.gameRoot.value && (
-                <div class="resources-banner resources-banner--warn">
-                  <AlertTriangle size={16} />
-                  <span class="resources-banner__text">{t("resources.safeModeOn")}</span>
-                  <HkButton
-                    size="sm"
-                    disabled={hub.safeModeBusy.value}
-                    loading={hub.safeModeBusy.value}
-                    onClick={() => (hub.safeModeAsk.value = "off")}
+      // ── the master column: the roster ────────────────────────────
+      // HkMasterDetail owns the column shell (the 320px track, the
+      // hairline, the surface tint, the clip and the internal scroller),
+      // and its shell is a flex column — exactly the head-over-rail-over-
+      // strip chain this slot renders, so the slot ships those children
+      // alone (no wrapper element of its own).
+      const sideColumn = (
+        <>
+          <div class="resources-view__side-head">
+            <div class="resources-view__side-head-row">
+              <h2 class="resources-view__side-title">{t("resources.title")}</h2>
+              <span class="resources-view__side-actions">
+                {/* Tool menu: safe mode + the migration wizard — the ⋯
+                    button rides the title row like the replay list's head
+                    actions; refresh / folder-install ride the source row
+                    below as its trailing ghost pair. */}
+                <span class="resources-view__tools" ref={hub.toolsAnchor}>
+                  <HkIconButton
+                    size={24}
+                    variant="ghost"
+                    data-hint={t("resources.toolsMenu")}
+                    onClick={() => (hub.toolsOpen.value = !hub.toolsOpen.value)}
                   >
-                    {t("resources.safeModeExit")}
-                  </HkButton>
+                    <Ellipsis size={15} />
+                  </HkIconButton>
+                  <HMenu
+                    variant="popup"
+                    title={t("resources.toolsMenu")}
+                    open={hub.toolsOpen.value}
+                    anchorRef={hub.toolsAnchor.value}
+                    placement="bottom-end"
+                    items={[
+                      {
+                        key: "safe-enter",
+                        label: t("resources.safeModeEnter"),
+                        icon: ShieldCheck,
+                        disabled: !hub.gameRoot.value || hub.safeMode.value || hub.safeModeBusy.value,
+                      },
+                      {
+                        key: "safe-exit",
+                        label: t("resources.safeModeExit"),
+                        icon: Undo2,
+                        disabled: !hub.safeMode.value || hub.safeModeBusy.value,
+                      },
+                      {
+                        key: "purge-reinstall",
+                        label: t("resources.purgeReinstall"),
+                        icon: Trash2,
+                        disabled:
+                          !hub.gameRoot.value ||
+                          hub.safeMode.value ||
+                          hub.purgeBusy.value,
+                      },
+                      {
+                        key: "migrate",
+                        label: t("resources.staleMigrate"),
+                        icon: RefreshCw,
+                        disabled:
+                          !hub.gameRoot.value || hub.staleBins.value.length === 0 || wizard.migrating.value,
+                      },
+                      {
+                        key: "sync-all",
+                        label: t("resources.sync.action"),
+                        icon: FolderSync,
+                        disabled:
+                          !hub.gameRoot.value ||
+                          hub.clientCount.value < 2 ||
+                          hub.catalogLoading.value ||
+                          hub.recordsLoading.value ||
+                          hub.syncAllBusy.value,
+                      },
+                    ]}
+                    // HMenu select emits the item key itself as the first argument.
+                    onSelect={(key: string | number) => {
+                      hub.toolsOpen.value = false;
+                      if (key === "safe-enter") hub.safeModeAsk.value = "on";
+                      else if (key === "safe-exit") hub.safeModeAsk.value = "off";
+                      else if (key === "purge-reinstall") hub.purgeAsk.value = hub.foreignUnits.value.length > 0 ? "choice" : "simple";
+                      else if (key === "migrate") wizard.openMigrateWizard();
+                      else if (key === "sync-all") void hub.openSyncAll();
+                    }}
+                    onUpdate:open={(v: boolean) => (hub.toolsOpen.value = v)}
+                  />
+                </span>
+              </span>
+            </div>
+
+            {/* Compact condition strip: only what NEEDS attention stays a
+                banner — a missing install speaks the replay list's quiet
+                no-client note, while safe mode / stale bins keep the
+                banner chrome (both carry an action). Tooling lives in the
+                ⋯ menu. */}
+            {!hub.gameRoot.value && (
+              <p class="resources-view__side-note">{t("resources.noGame")}</p>
+            )}
+
+            {hub.safeMode.value && hub.gameRoot.value && (
+              <div class="resources-banner resources-banner--warn">
+                <AlertTriangle size={16} />
+                <span class="resources-banner__text">{t("resources.safeModeOn")}</span>
+                <HkButton
+                  size="sm"
+                  disabled={hub.safeModeBusy.value}
+                  loading={hub.safeModeBusy.value}
+                  onClick={() => (hub.safeModeAsk.value = "off")}
+                >
+                  {t("resources.safeModeExit")}
+                </HkButton>
+              </div>
+            )}
+
+            {/* A tree stamped by an older client. Advisory: the banner
+                names the drift and the override count, and the hint is
+                reachable by keyboard (the sibling banners carry an
+                action button; this one's fix lives in the installed
+                list, so the hint has to be focusable to be read at
+                all). Suppressed under safe mode, where nothing is
+                loaded anyway. */}
+            {hub.treeVersion.value?.stale &&
+              hub.gameRoot.value &&
+              !hub.safeMode.value && (
+                <div class="resources-banner resources-banner--warn" role="alert">
+                  <AlertTriangle size={16} />
+                  <span
+                    class="resources-banner__text"
+                    tabindex="0"
+                    data-hint={t("resources.treeStaleHint")}
+                  >
+                    {hub.treeVersion.value.riskyPaths.length > 0
+                      ? t("resources.treeStale", {
+                          tree: hub.treeVersion.value.treeGameVersion ?? "?",
+                          current: hub.treeVersion.value.gameVersion ?? "?",
+                          count: hub.treeVersion.value.riskyPaths.length,
+                        })
+                      : t("resources.treeStaleNoOverrides", {
+                          tree: hub.treeVersion.value.treeGameVersion ?? "?",
+                          current: hub.treeVersion.value.gameVersion ?? "?",
+                        })}
+                  </span>
                 </div>
               )}
 
-              {/* A tree stamped by an older client. Advisory: the banner
-                  names the drift and the override count, and the hint is
-                  reachable by keyboard (the sibling banners carry an
-                  action button; this one's fix lives in the installed
-                  list, so the hint has to be focusable to be read at
-                  all). Suppressed under safe mode, where nothing is
-                  loaded anyway. */}
-              {hub.treeVersion.value?.stale &&
-                hub.gameRoot.value &&
-                !hub.safeMode.value && (
-                  <div class="resources-banner resources-banner--warn" role="alert">
-                    <AlertTriangle size={16} />
-                    <span
-                      class="resources-banner__text"
-                      tabindex="0"
-                      data-hint={t("resources.treeStaleHint")}
-                    >
-                      {hub.treeVersion.value.riskyPaths.length > 0
-                        ? t("resources.treeStale", {
-                            tree: hub.treeVersion.value.treeGameVersion ?? "?",
-                            current: hub.treeVersion.value.gameVersion ?? "?",
-                            count: hub.treeVersion.value.riskyPaths.length,
-                          })
-                        : t("resources.treeStaleNoOverrides", {
-                            tree: hub.treeVersion.value.treeGameVersion ?? "?",
-                            current: hub.treeVersion.value.gameVersion ?? "?",
-                          })}
-                    </span>
-                  </div>
-                )}
-
-              {hub.loaderStatus.value?.pnfModsPresent &&
-                !hub.loaderStatus.value.markerPresent &&
-                hub.gameRoot.value &&
-                !hub.safeMode.value && (
-                  <div class="resources-banner resources-banner--warn">
-                    <AlertTriangle size={16} />
-                    <span class="resources-banner__text">
-                      {t("resources.pnfLoaderMissing")}
-                    </span>
-                    <HkButton
-                      size="sm"
-                      variant="primary"
-                      disabled={hub.restoringLoader.value}
-                      loading={hub.restoringLoader.value}
-                      onClick={hub.restoreLoaderMarker}
-                    >
-                      {t("resources.pnfLoaderRestore")}
-                    </HkButton>
-                  </div>
-                )}
-
-              {hub.source.value === "installed" &&
-                hub.loaderHealthErrors.value.length > 0 &&
-                hub.gameRoot.value &&
-                !hub.safeMode.value && (
-                  <div class="loader-health">
-                    <button
-                      type="button"
-                      class="loader-health__head"
-                      aria-expanded={loaderHealthOpen.value}
-                      data-hint={t("resources.loaderHealth.title")}
-                      onClick={() => (loaderHealthOpen.value = !loaderHealthOpen.value)}
-                    >
-                      <AlertTriangle size={14} />
-                      <span class="loader-health__title">
-                        {t("resources.loaderHealth.title")}
-                      </span>
-                      <AppTag class="loader-health__badge" tone="warning">
-                        {hub.loaderHealthErrors.value.length}
-                      </AppTag>
-                      <ChevronDown
-                        size={14}
-                        class={{ "is-open": loaderHealthOpen.value }}
-                      />
-                    </button>
-                    {loaderHealthOpen.value && (
-                      <div class="loader-health__body">
-                        {hub.loaderHealthErrors.value.map((v, i) => (
-                          <div
-                            class="loader-health__row"
-                            key={`${v.modName ?? "framework"}-${v.kind}-${i}`}
-                          >
-                            <span class="loader-health__row-main">
-                              <span class="loader-health__row-name">
-                                {v.modName ?? t("resources.loaderHealth.framework")}
-                              </span>
-                              <span class="loader-health__row-kind">
-                                {t(`resources.loaderHealth.kind.${v.kind}`)}
-                              </span>
-                              <span class="loader-health__row-at">{v.at}</span>
-                            </span>
-                            <span class="loader-health__row-hint">
-                              {t(`resources.loaderHealth.hint.${v.kind}`)}
-                              <button
-                                type="button"
-                                class="loader-health__row-locate"
-                                onClick={() =>
-                                  hub.locateLoaderHealth(v.modName)
-                                }
-                              >
-                                {t("resources.loaderHealth.locate")}
-                              </button>
-                            </span>
-                          </div>
-                        ))}
-                        {hub.loaderHealthOkCount.value > 0 && (
-                          <div class="loader-health__ok">
-                            {t("resources.loaderHealth.loadedOkSummary", {
-                              count: hub.loaderHealthOkCount.value,
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-              {(() => {
-                const boot = hub.bootInstaller.value;
-                return hub.source.value === "installed" &&
-                  boot &&
-                  hub.gameRoot.value &&
-                  !hub.safeMode.value ? (
-                  /* The warning strip's chrome (HkAlert's warning token
-                      recipe) rides the wrapper; the collapsible is hikari's
-                      HkExpansionPanel — the DISARM action sits in its action
-                      slot, always reachable without expanding the row list
-                      (issue #1736's views batch). */
-                  <div class="boot-installer" data-hint={t("resources.bootInstaller.hint")}>
-                    <HkExpansionPanel
-                      modelValue={bootInstallerOpen.value}
-                      onUpdate:modelValue={(v: boolean) => (bootInstallerOpen.value = v)}
-                    >
-                      {{
-                        title: () => (
-                          <>
-                            <AlertTriangle size={14} class="boot-installer__icon" />
-                            <span class="boot-installer__title">
-                              {t("resources.bootInstaller.title", {
-                                count: boot.descriptors.length,
-                              })}
-                            </span>
-                          </>
-                        ),
-                        action: () => (
-                          <HkButton
-                            size="sm"
-                            variant="primary"
-                            disabled={hub.disarmBusy.value}
-                            loading={hub.disarmBusy.value}
-                            onClick={() => (disarmAsk.value = true)}
-                          >
-                            {t("resources.bootInstaller.disarm")}
-                          </HkButton>
-                        ),
-                        default: () => (
-                          <div class="boot-installer__body">
-                            <div class="boot-installer__unit">
-                              {boot.unitRelPath}
-                              {boot.version &&
-                                ` · v${boot.version}`}
-                            </div>
-                            {boot.descriptors.slice(0, 8).map((row) => (
-                              <div class="boot-installer__rowname" key={row}>
-                                {row}
-                              </div>
-                            ))}
-                            {boot.descriptors.length > 8 && (
-                              <div class="boot-installer__more">
-                                {t("resources.bootInstaller.more", {
-                                  count: boot.descriptors.length - 8,
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        ),
-                      }}
-                    </HkExpansionPanel>
-                  </div>
-                ) : null;
-              })()}
-
-              {hub.staleBins.value.length > 0 && hub.gameRoot.value && !hub.safeMode.value && (
+            {hub.loaderStatus.value?.pnfModsPresent &&
+              !hub.loaderStatus.value.markerPresent &&
+              hub.gameRoot.value &&
+              !hub.safeMode.value && (
                 <div class="resources-banner resources-banner--warn">
                   <AlertTriangle size={16} />
                   <span class="resources-banner__text">
-                    {t("resources.staleBinBanner", {
-                      version: hub.staleBins.value.map((b) => b.binVersion).join(", "),
-                      count: hub.staleBins.value.reduce((n, b) => n + b.fileCount, 0),
-                    })}
+                    {t("resources.pnfLoaderMissing")}
                   </span>
                   <HkButton
                     size="sm"
                     variant="primary"
-                    disabled={wizard.migrating.value}
-                    loading={wizard.migrating.value}
-                    onClick={wizard.openMigrateWizard}
+                    disabled={hub.restoringLoader.value}
+                    loading={hub.restoringLoader.value}
+                    onClick={hub.restoreLoaderMarker}
                   >
-                    {t("resources.staleMigrate")}
+                    {t("resources.pnfLoaderRestore")}
                   </HkButton>
                 </div>
               )}
 
-              {/* Individual-management notice: multi-client machine, unified
-                  sync OFF — installs and removals hit ONLY the selected
-                  client while the mode stays off. Quiet strip (no action):
-                  the switch on the source row below IS the way out. */}
-              {hub.syncIndividual.value && hub.activeInstall.value && (
-                <div class="resources-banner resources-banner--sync">
-                  <span class="resources-banner__text">
-                    {t("resources.sync.banner", {
-                      client: installLabelOf(hub.activeInstall.value),
-                    })}
-                  </span>
-                </div>
-              )}
-
-              {/* The count pill mirrors the replay list's count — scoped to
-                  the ACTIVE source AND big category, i.e. exactly what the
-                  "all" chip below counts; narrower chip/filter states show
-                  in the list itself. */}
-              <AppTag class="resources-view__count" tone="primary">
-                {t("resources.countLine", {
-                  count:
-                    hub.source.value === "online"
-                      ? hub.catalogInCat.value.length
-                      : hub.bigCat.value === "beautify"
-                        ? hub.layerStack.layers.value.length
-                        : hub.installedInCat.value.length,
-                })}
-              </AppTag>
-
-              {/* Big category — the row-filling segmented strip. */}
-              <HkTabs
-                variant="segmented"
-                block
-                modelValue={hub.bigCat.value}
-                onUpdate:modelValue={(v: string) => (hub.bigCat.value = v as BigCat)}
-                tabs={bigCatTabs}
-                renderPanels={false}
-              />
-
-              {/* Source switch + the three tool triggers (search popup,
-                  refresh/rescan, folder install) ride one row — all ghost
-                  icon-button sized, the segmented group carries the height. */}
-              <div class="resources-view__row">
-                <div class="resources-view__rowmain">
-                  <HkTabs
-                    variant="segmented"
-                    modelValue={hub.source.value}
-                    onUpdate:modelValue={(v: string) => hub.pickSource(v as "online" | "installed")}
-                    tabs={sourceTabs}
-                    renderPanels={false}
-                  />
-                  {/* Unified multi-client sync (only meaningful with several
-                      installs): ON fans catalog installs/uninstalls out to
-                      every client realm-filtered; OFF manages the selected
-                      client alone and raises the banner above. Bare switch —
-                      the data-hint tooltip carries the explanation, the ⋯
-                      menu's "Sync all clients" does the one-shot reconcile. */}
-                  {hub.clientCount.value > 1 && (
-                    <span
-                      class="resources-view__sync-toggle"
-                      data-hint={t("resources.sync.toggleHint")}
-                    >
-                      <HkSwitch
-                        size="sm"
-                        modelValue={hub.syncEnabled.value}
-                        aria-label={t("resources.sync.toggleLabel")}
-                        onUpdate:modelValue={() => hub.toggleSync()}
-                      />
+            {hub.source.value === "installed" &&
+              hub.loaderHealthErrors.value.length > 0 &&
+              hub.gameRoot.value &&
+              !hub.safeMode.value && (
+                <div class="loader-health">
+                  <button
+                    type="button"
+                    class="loader-health__head"
+                    aria-expanded={loaderHealthOpen.value}
+                    data-hint={t("resources.loaderHealth.title")}
+                    onClick={() => (loaderHealthOpen.value = !loaderHealthOpen.value)}
+                  >
+                    <AlertTriangle size={14} />
+                    <span class="loader-health__title">
+                      {t("resources.loaderHealth.title")}
                     </span>
-                  )}
-                </div>
-                <AsyncSearchCombo
-                  key={hub.source.value}
-                  ghost
-                  search={hub.comboSearch}
-                  itemKey={(raw: unknown) =>
-                    hub.source.value === "installed"
-                      ? (raw as InstalledMod).relPath
-                      : (raw as CatalogEntry).id
-                  }
-                  renderItem={comboRenderItem}
-                  onSelect={hub.comboSelect}
-                  title={t("resources.searchMod")}
-                  placeholder={t("resources.listFilter")}
-                  searchingText={t("resources.searching")}
-                  minChars={1}
-                  align="right"
-                  noResultsText={t("resources.empty")}
-                />
-                <HkIconButton
-                  size={24}
-                  variant="ghost"
-                  disabled={hub.refreshDisabled.value}
-                  data-hint={hub.source.value === "online" ? t("resources.refresh") : t("resources.scan")}
-                  aria-label={
-                    hub.source.value === "online" ? t("resources.refresh") : t("resources.scan")
-                  }
-                  onClick={hub.refresh}
-                >
-                  {hub.refreshSpinning.value ? (
-                    <HkSpinner size="xs" tone="current" />
-                  ) : (
-                    <RefreshCw size={15} />
-                  )}
-                </HkIconButton>
-                {/* 自定义导入安装: the custom-import wizard (three steps). The
-                    plain whole-package folder install stays reachable from
-                    the wizard's first step. */}
-                <HkIconButton
-                  size={24}
-                  variant="ghost"
-                  data-hint={t("resources.importWizard.title")}
-                  aria-label={t("resources.importWizard.title")}
-                  onClick={importWizard.openImportWizard}
-                >
-                  <FolderOpen size={15} />
-                </HkIconButton>
-              </div>
-
-              {hub.source.value === "online" && hub.catalogError.value && (
-                <ErrorCard
-                  error={hub.catalogError.value}
-                  description={t("resources.catalogError", { error: hub.catalogError.value })}
-                />
-              )}
-
-              {/* Sub-division chips, scoped to the active big category.
-                  Multi-select toggles: no chips picked = show everything,
-                  each clicked chip narrows to its bucket (union). The
-                  layered beautify view owns its own row badges, so the
-                  kind chips step aside there (they cannot narrow a stack). */}
-              {(hub.source.value === "online" || hub.bigCat.value === "function") && (
-              <div class="resources-chips">
-                {hub.source.value === "online"
-                  ? CATALOG_CATS.filter(
-                      (c) =>
-                        catBig(c) === hub.bigCat.value && (hub.catCounts.value.get(c) ?? 0) > 0,
-                    ).map((c) => (
-                      <AppTag
-                        key={c}
-                        interactive
-                        tone={hub.catalogCats.value.has(c) ? "primary" : "default"}
-                        face="outline"
-                        aria-pressed={hub.catalogCats.value.has(c)}
-                        data-hint={t("resources.chipsHint")}
-                        onClick={() => hub.toggleCatalogCat(c)}
-                      >
-                        {t(`resources.cat.${c}`)} · {hub.catCounts.value.get(c)}
-                      </AppTag>
-                    ))
-                  : KIND_ORDER.filter(
-                      (k) => KIND_BIG[k] === hub.bigCat.value && (hub.kindCounts.value.get(k) ?? 0) > 0,
-                    ).map((k) => (
-                      <AppTag
-                        key={k}
-                        interactive
-                        tone={hub.kindFilters.value.has(k) ? "primary" : "default"}
-                        face="outline"
-                        aria-pressed={hub.kindFilters.value.has(k)}
-                        data-hint={t("resources.chipsHint")}
-                        onClick={() => hub.toggleKindFilter(k)}
-                      >
-                        {kindLabel(k)} · {hub.kindCounts.value.get(k)}
-                      </AppTag>
-                    ))}
-              </div>
-              )}
-            </div>
-
-            {/* ── The compact list (the master half): the sidebar's
-                scroller — the filter stack above stays put; the hikari
-                scroll container owns the scrollbar (overlay track) and
-                the rows scroll inside its viewport ── */}
-            <HkScrollContainer class="resources-view__side-scroll">
-              <div class="resources-view__side-inner">
-                {hub.source.value !== "online"
-                  ? renderCrashPins(crashPins, () => {
-                      crashPinsOpen.value = true;
-                    })
-                  : null}
-                {hub.source.value !== "online"
-                  ? renderPurgeBackups(purgeBackups, () => {
-                      purgeBackupsOpen.value = true;
-                    })
-                  : null}
-                {hub.source.value === "online"
-                  ? hub.catalogShown.value.length === 0
-                    ? catalogEmptyNote()
-                    : hub.catalogShown.value.map((entry) => renderCatalogRow(ctx, entry, selKey))
-                  : hub.bigCat.value === "beautify"
-                    ? (
-                      <>
-                        <LayerStack
-                          layers={hub.layerStack.layers.value}
-                          rendered={hub.layerStack.rendered.value}
-                          slotConflicts={hub.layerStack.conflicts.value}
-                          selectedPackId={
-                            hub.selection.value?.mode === "layer"
-                              ? hub.selection.value.packId
-                              : ""
-                          }
-                          busy={hub.layerStack.busy.value}
-                          loading={hub.layerStack.loading.value}
-                          error={hub.layerStack.error.value}
-                          reportBusy={hub.layerStack.reportBusy.value}
-                          onSelect={hub.selectLayer}
-                          onReorder={(from: number, to: number) =>
-                            void hub.layerStack.setOrder(from, to)
-                          }
-                          onApply={() => void hub.layerStack.applyNow()}
-                          onOpenReport={() => void hub.layerStack.openReport()}
-                          onRetry={() => void hub.layerStack.refresh()}
-                        />
-                        {hub.textureComponents.value.length > 0 && (
-                          <div class="layer-components">
+                    <AppTag class="loader-health__badge" tone="warning">
+                      {hub.loaderHealthErrors.value.length}
+                    </AppTag>
+                    <ChevronDown
+                      size={14}
+                      class={{ "is-open": loaderHealthOpen.value }}
+                    />
+                  </button>
+                  {loaderHealthOpen.value && (
+                    <div class="loader-health__body">
+                      {hub.loaderHealthErrors.value.map((v, i) => (
+                        <div
+                          class="loader-health__row"
+                          key={`${v.modName ?? "framework"}-${v.kind}-${i}`}
+                        >
+                          <span class="loader-health__row-main">
+                            <span class="loader-health__row-name">
+                              {v.modName ?? t("resources.loaderHealth.framework")}
+                            </span>
+                            <span class="loader-health__row-kind">
+                              {t(`resources.loaderHealth.kind.${v.kind}`)}
+                            </span>
+                            <span class="loader-health__row-at">{v.at}</span>
+                          </span>
+                          <span class="loader-health__row-hint">
+                            {t(`resources.loaderHealth.hint.${v.kind}`)}
                             <button
                               type="button"
-                              class="layer-components__head"
-                              aria-expanded={componentsOpen.value}
-                              onClick={() => (componentsOpen.value = !componentsOpen.value)}
+                              class="loader-health__row-locate"
+                              onClick={() =>
+                                hub.locateLoaderHealth(v.modName)
+                              }
                             >
-                              <ListTree size={14} />
-                              <span class="layer-components__title">
-                                {t("resources.layers.componentsToggle")}
-                              </span>
-                              <AppTag tone="default">
-                                {hub.textureComponents.value.length}
-                              </AppTag>
-                              <ChevronDown
-                                size={14}
-                                class={{ "is-open": componentsOpen.value }}
-                              />
+                              {t("resources.loaderHealth.locate")}
                             </button>
-                            {componentsOpen.value && (
-                              <div class="layer-components__body">
-                                {hub.textureComponents.value.map((comp) =>
-                                  renderComponentRow(ctx, comp),
-                                )}
-                              </div>
-                            )}
+                          </span>
+                        </div>
+                      ))}
+                      {hub.loaderHealthOkCount.value > 0 && (
+                        <div class="loader-health__ok">
+                          {t("resources.loaderHealth.loadedOkSummary", {
+                            count: hub.loaderHealthOkCount.value,
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+            {(() => {
+              const boot = hub.bootInstaller.value;
+              return hub.source.value === "installed" &&
+                boot &&
+                hub.gameRoot.value &&
+                !hub.safeMode.value ? (
+                /* The warning strip's chrome (HkAlert's warning token
+                    recipe) rides the wrapper; the collapsible is hikari's
+                    HkExpansionPanel — the DISARM action sits in its action
+                    slot, always reachable without expanding the row list
+                    (issue #1736's views batch). */
+                <div class="boot-installer" data-hint={t("resources.bootInstaller.hint")}>
+                  <HkExpansionPanel
+                    modelValue={bootInstallerOpen.value}
+                    onUpdate:modelValue={(v: boolean) => (bootInstallerOpen.value = v)}
+                  >
+                    {{
+                      title: () => (
+                        <>
+                          <AlertTriangle size={14} class="boot-installer__icon" />
+                          <span class="boot-installer__title">
+                            {t("resources.bootInstaller.title", {
+                              count: boot.descriptors.length,
+                            })}
+                          </span>
+                        </>
+                      ),
+                      action: () => (
+                        <HkButton
+                          size="sm"
+                          variant="primary"
+                          disabled={hub.disarmBusy.value}
+                          loading={hub.disarmBusy.value}
+                          onClick={() => (disarmAsk.value = true)}
+                        >
+                          {t("resources.bootInstaller.disarm")}
+                        </HkButton>
+                      ),
+                      default: () => (
+                        <div class="boot-installer__body">
+                          <div class="boot-installer__unit">
+                            {boot.unitRelPath}
+                            {boot.version &&
+                              ` · v${boot.version}`}
                           </div>
-                        )}
-                      </>
-                    )
-                    : hub.shown.value.length === 0
-                      ? installedEmptyNote()
-                      : hub.shown.value.map((m) => renderInstalledRow(ctx, m, selKey))}
-              </div>
-            </HkScrollContainer>
+                          {boot.descriptors.slice(0, 8).map((row) => (
+                            <div class="boot-installer__rowname" key={row}>
+                              {row}
+                            </div>
+                          ))}
+                          {boot.descriptors.length > 8 && (
+                            <div class="boot-installer__more">
+                              {t("resources.bootInstaller.more", {
+                                count: boot.descriptors.length - 8,
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ),
+                    }}
+                  </HkExpansionPanel>
+                </div>
+              ) : null;
+            })()}
 
-            {renderModstationStrip(ctx)}
-
-            {/* Catalog metadata rides a quiet footer (the count itself moved
-                into the pill above); the installed list has none — its count
-                IS the pill. */}
-            {hub.source.value === "online" && (
-              <div class="resources-view__side-foot">
-                {t("resources.catalogMeta", {
-                  source: hub.catalogSource.value,
-                  time: formatLocalStamp(hub.catalogFetched.value, true),
-                })}
+            {hub.staleBins.value.length > 0 && hub.gameRoot.value && !hub.safeMode.value && (
+              <div class="resources-banner resources-banner--warn">
+                <AlertTriangle size={16} />
+                <span class="resources-banner__text">
+                  {t("resources.staleBinBanner", {
+                    version: hub.staleBins.value.map((b) => b.binVersion).join(", "),
+                    count: hub.staleBins.value.reduce((n, b) => n + b.fileCount, 0),
+                  })}
+                </span>
+                <HkButton
+                  size="sm"
+                  variant="primary"
+                  disabled={wizard.migrating.value}
+                  loading={wizard.migrating.value}
+                  onClick={wizard.openMigrateWizard}
+                >
+                  {t("resources.staleMigrate")}
+                </HkButton>
               </div>
             )}
-          </aside>
 
-          {/* ── The detail half: what the selected row is, and every
-              action for it, with the actions pinned bottom-right ── */}
-          <section class="resources-view__main" key={paneKey}>{renderPane(ctx)}</section>
+            {/* Individual-management notice: multi-client machine, unified
+                sync OFF — installs and removals hit ONLY the selected
+                client while the mode stays off. Quiet strip (no action):
+                the switch on the source row below IS the way out. */}
+            {hub.syncIndividual.value && hub.activeInstall.value && (
+              <div class="resources-banner resources-banner--sync">
+                <span class="resources-banner__text">
+                  {t("resources.sync.banner", {
+                    client: installLabelOf(hub.activeInstall.value),
+                  })}
+                </span>
+              </div>
+            )}
+
+            {/* The count pill mirrors the replay list's count — scoped to
+                the ACTIVE source AND big category, i.e. exactly what the
+                "all" chip below counts; narrower chip/filter states show
+                in the list itself. */}
+            <AppTag class="resources-view__count" tone="primary">
+              {t("resources.countLine", {
+                count:
+                  hub.source.value === "online"
+                    ? hub.catalogInCat.value.length
+                    : hub.bigCat.value === "beautify"
+                      ? hub.layerStack.layers.value.length
+                      : hub.installedInCat.value.length,
+              })}
+            </AppTag>
+
+            {/* Big category — the row-filling segmented strip. */}
+            <HkTabs
+              variant="segmented"
+              block
+              modelValue={hub.bigCat.value}
+              onUpdate:modelValue={(v: string) => (hub.bigCat.value = v as BigCat)}
+              tabs={bigCatTabs}
+              renderPanels={false}
+            />
+
+            {/* Source switch + the three tool triggers (search popup,
+                refresh/rescan, folder install) ride one row — all ghost
+                icon-button sized, the segmented group carries the height. */}
+            <div class="resources-view__row">
+              <div class="resources-view__rowmain">
+                <HkTabs
+                  variant="segmented"
+                  modelValue={hub.source.value}
+                  onUpdate:modelValue={(v: string) => hub.pickSource(v as "online" | "installed")}
+                  tabs={sourceTabs}
+                  renderPanels={false}
+                />
+                {/* Unified multi-client sync (only meaningful with several
+                    installs): ON fans catalog installs/uninstalls out to
+                    every client realm-filtered; OFF manages the selected
+                    client alone and raises the banner above. Bare switch —
+                    the data-hint tooltip carries the explanation, the ⋯
+                    menu's "Sync all clients" does the one-shot reconcile. */}
+                {hub.clientCount.value > 1 && (
+                  <span
+                    class="resources-view__sync-toggle"
+                    data-hint={t("resources.sync.toggleHint")}
+                  >
+                    <HkSwitch
+                      size="sm"
+                      modelValue={hub.syncEnabled.value}
+                      aria-label={t("resources.sync.toggleLabel")}
+                      onUpdate:modelValue={() => hub.toggleSync()}
+                    />
+                  </span>
+                )}
+              </div>
+              <AsyncSearchCombo
+                key={hub.source.value}
+                ghost
+                search={hub.comboSearch}
+                itemKey={(raw: unknown) =>
+                  hub.source.value === "installed"
+                    ? (raw as InstalledMod).relPath
+                    : (raw as CatalogEntry).id
+                }
+                renderItem={comboRenderItem}
+                onSelect={hub.comboSelect}
+                title={t("resources.searchMod")}
+                placeholder={t("resources.listFilter")}
+                searchingText={t("resources.searching")}
+                minChars={1}
+                align="right"
+                noResultsText={t("resources.empty")}
+              />
+              <HkIconButton
+                size={24}
+                variant="ghost"
+                disabled={hub.refreshDisabled.value}
+                data-hint={hub.source.value === "online" ? t("resources.refresh") : t("resources.scan")}
+                aria-label={
+                  hub.source.value === "online" ? t("resources.refresh") : t("resources.scan")
+                }
+                onClick={hub.refresh}
+              >
+                {hub.refreshSpinning.value ? (
+                  <HkSpinner size="xs" tone="current" />
+                ) : (
+                  <RefreshCw size={15} />
+                )}
+              </HkIconButton>
+              {/* 自定义导入安装: the custom-import wizard (three steps). The
+                  plain whole-package folder install stays reachable from
+                  the wizard's first step. */}
+              <HkIconButton
+                size={24}
+                variant="ghost"
+                data-hint={t("resources.importWizard.title")}
+                aria-label={t("resources.importWizard.title")}
+                onClick={importWizard.openImportWizard}
+              >
+                <FolderOpen size={15} />
+              </HkIconButton>
+            </div>
+
+            {hub.source.value === "online" && hub.catalogError.value && (
+              <ErrorCard
+                error={hub.catalogError.value}
+                description={t("resources.catalogError", { error: hub.catalogError.value })}
+              />
+            )}
+
+            {/* Sub-division chips, scoped to the active big category.
+                Multi-select toggles: no chips picked = show everything,
+                each clicked chip narrows to its bucket (union). The
+                layered beautify view owns its own row badges, so the
+                kind chips step aside there (they cannot narrow a stack). */}
+            {(hub.source.value === "online" || hub.bigCat.value === "function") && (
+            <div class="resources-chips">
+              {hub.source.value === "online"
+                ? CATALOG_CATS.filter(
+                    (c) =>
+                      catBig(c) === hub.bigCat.value && (hub.catCounts.value.get(c) ?? 0) > 0,
+                  ).map((c) => (
+                    <AppTag
+                      key={c}
+                      interactive
+                      tone={hub.catalogCats.value.has(c) ? "primary" : "default"}
+                      face="outline"
+                      aria-pressed={hub.catalogCats.value.has(c)}
+                      data-hint={t("resources.chipsHint")}
+                      onClick={() => hub.toggleCatalogCat(c)}
+                    >
+                      {t(`resources.cat.${c}`)} · {hub.catCounts.value.get(c)}
+                    </AppTag>
+                  ))
+                : KIND_ORDER.filter(
+                    (k) => KIND_BIG[k] === hub.bigCat.value && (hub.kindCounts.value.get(k) ?? 0) > 0,
+                  ).map((k) => (
+                    <AppTag
+                      key={k}
+                      interactive
+                      tone={hub.kindFilters.value.has(k) ? "primary" : "default"}
+                      face="outline"
+                      aria-pressed={hub.kindFilters.value.has(k)}
+                      data-hint={t("resources.chipsHint")}
+                      onClick={() => hub.toggleKindFilter(k)}
+                    >
+                      {kindLabel(k)} · {hub.kindCounts.value.get(k)}
+                    </AppTag>
+                  ))}
+            </div>
+            )}
+          </div>
+
+          {/* ── The compact list (the master half): the sidebar's
+              scroller — the filter stack above stays put; the hikari
+              scroll container owns the scrollbar (overlay track) and
+              the rows scroll inside its viewport ── */}
+          <HkScrollContainer class="resources-view__side-scroll">
+            <div class="resources-view__side-inner">
+              {hub.source.value !== "online"
+                ? renderCrashPins(crashPins, () => {
+                    crashPinsOpen.value = true;
+                  })
+                : null}
+              {hub.source.value !== "online"
+                ? renderPurgeBackups(purgeBackups, () => {
+                    purgeBackupsOpen.value = true;
+                  })
+                : null}
+              {hub.source.value === "online"
+                ? hub.catalogShown.value.length === 0
+                  ? catalogEmptyNote()
+                  : hub.catalogShown.value.map((entry) => renderCatalogRow(ctx, entry, selKey))
+                : hub.bigCat.value === "beautify"
+                  ? (
+                    <>
+                      <LayerStack
+                        layers={hub.layerStack.layers.value}
+                        rendered={hub.layerStack.rendered.value}
+                        slotConflicts={hub.layerStack.conflicts.value}
+                        selectedPackId={
+                          hub.selection.value?.mode === "layer"
+                            ? hub.selection.value.packId
+                            : ""
+                        }
+                        busy={hub.layerStack.busy.value}
+                        loading={hub.layerStack.loading.value}
+                        error={hub.layerStack.error.value}
+                        reportBusy={hub.layerStack.reportBusy.value}
+                        onSelect={hub.selectLayer}
+                        onReorder={(from: number, to: number) =>
+                          void hub.layerStack.setOrder(from, to)
+                        }
+                        onApply={() => void hub.layerStack.applyNow()}
+                        onOpenReport={() => void hub.layerStack.openReport()}
+                        onRetry={() => void hub.layerStack.refresh()}
+                      />
+                      {hub.textureComponents.value.length > 0 && (
+                        <div class="layer-components">
+                          <button
+                            type="button"
+                            class="layer-components__head"
+                            aria-expanded={componentsOpen.value}
+                            onClick={() => (componentsOpen.value = !componentsOpen.value)}
+                          >
+                            <ListTree size={14} />
+                            <span class="layer-components__title">
+                              {t("resources.layers.componentsToggle")}
+                            </span>
+                            <AppTag tone="default">
+                              {hub.textureComponents.value.length}
+                            </AppTag>
+                            <ChevronDown
+                              size={14}
+                              class={{ "is-open": componentsOpen.value }}
+                            />
+                          </button>
+                          {componentsOpen.value && (
+                            <div class="layer-components__body">
+                              {hub.textureComponents.value.map((comp) =>
+                                renderComponentRow(ctx, comp),
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )
+                  : hub.shown.value.length === 0
+                    ? installedEmptyNote()
+                    : hub.shown.value.map((m) => renderInstalledRow(ctx, m, selKey))}
+            </div>
+          </HkScrollContainer>
+
+          {renderModstationStrip(ctx)}
+
+          {/* Catalog metadata rides a quiet footer (the count itself moved
+              into the pill above); the installed list has none — its count
+              IS the pill. */}
+          {hub.source.value === "online" && (
+            <div class="resources-view__side-foot">
+              {t("resources.catalogMeta", {
+                source: hub.catalogSource.value,
+                time: formatLocalStamp(hub.catalogFetched.value, true),
+              })}
+            </div>
+          )}
+        </>
+      );
+
+      // ── the detail column: what the selected row is ───────────────
+      // The component's detail region is chrome-less and scrolls
+      // internally; `paneKey` still remounts the pane on a selection
+      // change (its rows and scroll offset belong to the old row).
+      const detailColumn = (
+        <section class="resources-view__main" key={paneKey}>{renderPane(ctx)}</section>
+      );
+
+      // The phone gets the component's window form (its narrow split is
+      // dismissal-driven, so the close channel is bound only where the
+      // sheet applies); a desktop pane keeps no close affordance, and an
+      // empty pane is the component's own empty state (same sentence the
+      // retired pick hint carried). A delisted deep link takes the pane
+      // over without a selection, so it opens the detail too.
+      return (
+        <div class="resources-view">
+          {/* ── Master/detail in the replay page's secondary-sidebar
+              shape: the two columns are HkMasterDetail's now — the flush
+              roster track with its hairline and tint, the chrome-less
+              detail region — and the slots above ship their content. ── */}
+          <HkMasterDetail
+            detailOpen={
+              (hub.selection.value != null || hub.delistedHit.value != null) &&
+              !(phoneLayout.value && paneDismissed.value)
+            }
+            detailTitle={t("resources.title")}
+            emptyTitle={t("resources.pickHint")}
+            emptyIcon={MousePointerClick}
+            listWidth="320px"
+            onClose={phoneLayout.value ? () => (paneDismissed.value = true) : undefined}
+          >
+            {{ list: () => [sideColumn], detail: () => [detailColumn] }}
+          </HkMasterDetail>
 
           <HkConfirmDialog
             open={!!hub.confirmTarget.value}

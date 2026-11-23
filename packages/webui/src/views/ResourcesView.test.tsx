@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { enableAutoUnmount, flushPromises, shallowMount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, shallowMount, type VueWrapper } from "@vue/test-utils";
 import { h, reactive } from "vue";
 import type { VNode } from "vue";
 import type { InstalledMod, MigrationPlan } from "@/api";
@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
   catalogInstall: vi.fn(), catalogUninstall: vi.fn(),
   parkSkip: vi.fn(),
   syncOn: true,
+  /* The viewport composable's answer: one narrow test flips this to mount the
+     component's window form (the phone sheet) instead of the two-pane one. */
+  mobile: false,
 }));
 vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("@/api", () => ({ api: {
@@ -138,6 +141,29 @@ vi.mock("@celestia-island/hikari", () => {
         return () => h("span", { ...attrs, class: ["hk-tag", attrs.class] }, [slots.icon?.(), slots.default?.()]);
       },
     },
+    /* The two-pane console: render both columns for real (the shape every
+       roster/pane assertion was written against). The WIDE form substitutes
+       the empty state while `detailOpen` is false; the narrow WINDOW form
+       keeps the detail body mounted regardless (the real component's HkModal
+       plays its exit motion over it), with `mocks.mobile` standing in for the
+       viewport split. The modal frame itself is nulled. */
+    HkMasterDetail: {
+      name: "HkMasterDetail",
+      props: ["detailOpen", "detailTitle", "emptyTitle", "emptyDescription", "emptyIcon", "listWidth", "splitAt", "closeLabel"],
+      emits: ["close"],
+      setup(
+        props: { detailOpen?: boolean },
+        { slots }: { slots: { list?: () => VNode[]; detail?: () => VNode[]; actions?: () => VNode[] } },
+      ) {
+        return () =>
+          h("div", { class: "hk-master-detail", "data-split": mocks.mobile ? "single" : "two" }, [
+            h("div", { class: "hk-master-detail-list" }, slots.list?.() ?? []),
+            mocks.mobile || props.detailOpen
+              ? h("div", { class: "hk-master-detail-detail" }, slots.detail?.() ?? [])
+              : h("div", { class: "hk-master-detail-empty" }),
+          ]);
+      },
+    },
     /* The file-list window's additions (detail ⋯ menu + tree). */
     HkTree: component("HkTree"),
     // The view's scroll regions (sidebar list, pane bodies, wizard stacks)
@@ -178,6 +204,16 @@ vi.mock("@celestia-island/hikari", () => {
       },
     },
     useToast: () => ({ error: mocks.error, success: mocks.success, warning: mocks.warning, info: mocks.info }),
+    /* The viewport composable behind the component's narrow split: a wide
+       desktop by default (the two-pane form is the one most tests exercise);
+       `mocks.mobile` mounts the narrow form instead. */
+    useBreakpoint: () => ({
+      width: { value: mocks.mobile ? 390 : 1280 },
+      current: { value: mocks.mobile ? "xs" : "xl" },
+      isMobile: { value: mocks.mobile },
+      isTablet: { value: false },
+      isDesktop: { value: !mocks.mobile },
+    }),
   };
 });
 
@@ -203,7 +239,7 @@ async function mountInstalled() {
   const view = shallowMount(ResourcesView, {
     // LoadingNote renders too: the mid-scan empty note keeps its copy (the
     // ring is the stubbed HkSpinner), and the notes below assert on it.
-    global: { stubs: { HkScrollContainer: false, HkExpansionPanel: false, LoadingNote: false, AppTag: false, HkTag: false } },
+    global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, HkExpansionPanel: false, LoadingNote: false, AppTag: false, HkTag: false } },
   });
   view.findAllComponents({ name: "HkTabs" }).find((tabs) => tabs.props("modelValue") === "online")!
     .vm.$emit("update:modelValue", "installed");
@@ -213,6 +249,7 @@ async function mountInstalled() {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.syncOn = true;
+  mocks.mobile = false;
   mocks.config = reactive({ activeInstall: { path: "C:/TestGameA" }, installs: [] });
   mocks.scan.mockResolvedValue([mod("Mod A")]);
   mocks.foreign.mockResolvedValue([]);
@@ -512,7 +549,7 @@ describe("plugin file-list window", () => {
     // Same un-stub as mountInstalled: the scroll containers wrapping the
     // sidebar rows must render their slots for .mod-row to exist.
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -542,7 +579,7 @@ describe("catalog detail menu", () => {
     });
     mocks.records.mockResolvedValue(records);
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -580,7 +617,7 @@ describe("catalog detail menu", () => {
       { id: "smi", version: "1", gameRoot: "C:/TestGameA", preset: "sasagcy" },
     ]);
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -637,7 +674,7 @@ describe("catalog detail menu", () => {
       { id: "battle.panel.ttaro", version: "1", gameRoot: "C:/TestGameA", preset: null },
     ]);
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -695,7 +732,7 @@ describe("detail pane server tag + author tags", () => {
       fetchedAt: "",
     });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -748,7 +785,7 @@ describe("detail pane server tag + author tags", () => {
       fetchedAt: "",
     });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -772,7 +809,7 @@ describe("server-applicability filtering (left-sidebar client realm)", () => {
     mocks.catalog.mockResolvedValue({ mods, sourceVersion: "test", fetchedAt: "" });
     mocks.config.activeInstall = active as typeof mocks.config.activeInstall;
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     return view;
@@ -846,7 +883,7 @@ describe("multi-client sync", () => {
       name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
     });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -895,7 +932,7 @@ describe("multi-client sync", () => {
         : { name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [] },
     );
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -942,7 +979,7 @@ describe("multi-client sync", () => {
         : { name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [] },
     );
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -980,7 +1017,7 @@ describe("multi-client sync", () => {
         fetchedAt: "",
       });
       const view = await shallowMount(ResourcesView, {
-        global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+        global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
       });
       await flushPromises();
       return view;
@@ -1029,7 +1066,7 @@ describe("multi-client sync", () => {
       id: "mod-extra", name: "Mod Extra", removedFiles: 1, restoredFiles: 0,
     });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     view.findComponent({ name: "HMenu" }).vm.$emit("select", "sync-all");
@@ -1075,7 +1112,7 @@ describe("multi-client sync", () => {
       skipped: "client lacks assets", skippedKind: "package",
     });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     view.findComponent({ name: "HMenu" }).vm.$emit("select", "sync-all");
@@ -1102,7 +1139,7 @@ describe("multi-client sync", () => {
   it("exposes the sync-all tools entry disabled below two clients", async () => {
     mocks.catalog.mockResolvedValue({ mods: [catEntry("mod-x")], sourceVersion: "test", fetchedAt: "" });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     const tools = view.findComponent({ name: "HMenu" });
@@ -1323,7 +1360,7 @@ describe("entry clients window", () => {
       // The window is a real child component with its own fetch watch —
       // keep it live under shallowMount.
       global: {
-        stubs: { HkScrollContainer: false, LoadingNote: false, EntryClientsWindow: false, AppTag: false, HkTag: false },
+        stubs: { HkMasterDetail: false, HkScrollContainer: false, LoadingNote: false, EntryClientsWindow: false, AppTag: false, HkTag: false },
       },
     });
     await flushPromises();
@@ -1631,3 +1668,51 @@ describe("installed-unit junk hygiene", () => {
   });
 });
 
+describe("phone sheet (the component's narrow form)", () => {
+  /** The listener the real component reads to choose its narrow form
+   *  (`instance.vnode.props.onClose`); a declared emit is stripped from attrs,
+   *  so this is the only place the binding is visible — same read the
+   *  component itself performs. */
+  function closeBinding(host: VueWrapper): unknown {
+    return (host.vm.$ as unknown as { vnode: { props?: Record<string, unknown> } })
+      .vnode.props?.onClose;
+  }
+
+  it("binds the close channel only on a phone, and a dismissal keeps the pane's body", async () => {
+    mocks.mobile = true;
+    const view = await mountInstalled();
+    const host = () => view.findComponent({ name: "HkMasterDetail" });
+    // The window form is dismissal-driven: the narrow host carries a close
+    // listener, and that binding is what makes the component raise the sheet.
+    expect(typeof closeBinding(host())).toBe("function");
+    expect(host().props("detailOpen")).toBe(false);
+
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    expect(host().props("detailOpen")).toBe(true);
+    expect(view.find(".mod-detail__name").text()).toContain("Mod A1");
+
+    // Dismissing mutes detailOpen — it must NOT clear the selection, or the
+    // window's exit motion would swap the mod's body for the empty pane.
+    host().vm.$emit("close");
+    await flushPromises();
+    expect(host().props("detailOpen")).toBe(false);
+    expect(view.find(".mod-detail__name").text()).toContain("Mod A1");
+
+    // Picking a row again re-raises the sheet.
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    expect(host().props("detailOpen")).toBe(true);
+    view.unmount();
+  });
+
+  it("keeps the desktop pane free of any close binding", async () => {
+    const view = await mountInstalled();
+    const host = view.findComponent({ name: "HkMasterDetail" });
+    expect(closeBinding(host)).toBeUndefined();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    expect(host.props("detailOpen")).toBe(true);
+    view.unmount();
+  });
+});
