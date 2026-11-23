@@ -1,0 +1,82 @@
+{
+  "Aoba": {
+    "bottom": 111,
+    "file": "PJSC007.webp",
+    "top": 36
+  },
+  "California": {
+    "bottom": 122,
+    "file": "PASB707.webp",
+    "top": 23
+  },
+  "Fuso": {
+    "bottom": 123,
+    "file": "PJSB006.webp",
+    "top": 20
+  },
+  "Jervis": {
+    "bottom": 124,
+    "file": "PBSD107.webp",
+    "top": 14
+  },
+  "Nagato": {
+    "bottom": 125,
+    "file": "PJSB010.webp",
+    "top": 21
+  },
+  "PBSB106": {
+    "bottom": 121,
+    "file": "PBSB106.webp",
+    "top": 8
+  },
+  "PBSB207": {
+    "bottom": 109,
+    "file": "PBSB207.webp",
+    "top": 31
+  },
+  "PFSC107": {
+    "bottom": 116,
+    "file": "PFSC107.webp",
+    "top": 34
+  },
+  "PGSB107": {
+    "bottom": 112,
+    "file": "PGSB107.webp",
+    "top": 31
+  },
+  "PGSC016": {
+    "bottom": 107,
+    "file": "PGSC016.webp",
+    "top": 40
+  },
+  "PGSS206": {
+    "bottom": 108,
+    "file": "PGSS206.webp",
+    "top": 42
+  },
+  "PISC517": {
+    "bottom": 108,
+    "file": "PISC517.webp",
+    "top": 34
+  },
+  "PISC607": {
+    "bottom": 123,
+    "file": "PISC607.webp",
+    "top": 20
+  },
+  "Ranger": {
+    "bottom": 115,
+    "file": "PASA106.webp",
+    "top": 29
+  },
+  "Ryujo": {
+    "bottom": 108,
+    "file": "PJSA106.webp",
+    "top": 36
+  },
+  "Shiratsuyu": {
+    "bottom": 112,
+    "file": "PJSD207.webp",
+    "top": 21
+  }
+}

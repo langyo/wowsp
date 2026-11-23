@@ -46,7 +46,11 @@ const HOLO_PAIRS: Record<keyof typeof ROLE_COLOR, { baseColor: number; fresnelCo
   enemy: { baseColor: 0xcc3333, fresnelColor: 0xff6666 },
 };
 const MAP_BOUNDS: HoloBounds = { minX: -700, maxX: 700, minZ: -700, maxZ: 700 };
-const CAP_RING_R = 90;
+/** Capture radius in world units. The app's 3D rings take the replay's own
+ *  `kind.radius` and fall back to 150 (webui actorBuild; ~675 m at the
+ *  1 u ≈ 4.5 m calibration) — the site's bake carries no per-point radius,
+ *  so the same fallback keeps ring proportions identical to the app's. */
+const CAP_RING_R = 150;
 
 /** The game's own HUD ship icons (bundled with the site assets). */
 const ICON_BASE = `${siteBase}icons/ships`;
@@ -157,6 +161,9 @@ export default defineComponent({
     /** Recorder ship health plaque (bottom-left card). */
     const selfShip = ref<ShipNode | null>(null);
     const selfSilhouette = ref<string | null>(null);
+    /** Game plaque art (bitmap + its alpha band) — the app's primary branch. */
+    const selfSilhouetteUrl = ref<string | null>(null);
+    const selfSilhouetteBox = ref<{ top: number; bottom: number } | null>(null);
     const selfHp = ref<number | null>(null);
     const selfMaxHp = ref<number | null>(null);
     const selfRep = ref<number | null>(null);
@@ -167,6 +174,13 @@ export default defineComponent({
 
     /** Hull side-silhouettes (bake output, keyed by model name). */
     let silhouettes: Record<string, { path: string }> = {};
+    /** The game's own plaque art for this battle's ships (baked by
+     *  scripts/bake_site_silhouettes.py, keyed by the roster's model stem).
+     *  The desktop app draws the SAME 404×155 bitmaps, cropped to the art's
+     *  alpha band — the vector path above is only its fallback, and its
+     *  traced profile renders several times taller than the game plaque. */
+    interface SilhouetteArt { file: string; top: number; bottom: number }
+    let silArt: Record<string, SilhouetteArt> = {};
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Alt") altDown.value = true;
@@ -197,7 +211,23 @@ export default defineComponent({
     const textures: THREE.Texture[] = [];
     let minimapCtx: CanvasRenderingContext2D | null = null;
     let seaMat: THREE.MeshBasicMaterial | null = null;
+    let waterFloorMat: THREE.MeshBasicMaterial | null = null;
     let gridMat: THREE.LineBasicMaterial | null = null;
+    /** App replay-view framing (webui: mapInternals.fitCamera): the desktop
+     *  app opens 45° ABOVE the battle rect on the +scene-z side (looking
+     *  north) with a 50° lens — the "god view, slightly tilted" that gives
+     *  its map real depth. The site keeps that same pose (fixed elevation,
+     *  small azimuth sway around it) instead of the old nearly top-down plan
+     *  view it used to drop straight down onto.
+     *
+     *  distPerSpan: the app fits the battle rect at span·√2/2 for a roughly
+     *  SQUARE viewport; the card here is ~1.55:1, so the same fit would leave
+     *  most of the width empty and shrink the ships/rings. 0.62 keeps the
+     *  app's crop character (map runs past the frame edge, like the app
+     *  capture) with the caps and the action at the app's relative scale. */
+    const FRAME = { fov: 50, distPerSpan: 0.62, swayRad: 0.55, swaySpeed: 0.12 } as const;
+    /** Camera rig, solved once from the baked battle's own bounds. */
+    let rig = { cx: 0, cz: 0, dist: 600 };
     /** Light/dark follows the site theme through the SHARED stageTheme
      *  source (@wowsp/holo) — the same data source + refresh logic every
      *  3D renderer uses (it watches hikari's root data-mode attribute, not
@@ -215,7 +245,7 @@ export default defineComponent({
     let capZones: CapZone[] = [];
     /** Ring elevation: floats above the terrain so island points stay visible. */
     let capY = 2.2;
-    let capRingMats: { ring: THREE.MeshBasicMaterial; fill: THREE.MeshBasicMaterial }[] = [];
+    let capRingMats: THREE.MeshBasicMaterial[] = [];
     let reduced = false;
     let currentDuration = 100;
     /** Factual sink events (bake ground truth: time + victim only). */
@@ -238,12 +268,12 @@ export default defineComponent({
 
     function applyTheme() {
       const light = siteModeIsLight();
-      // Sea + grid follow the site theme: light frosted sea in light mode,
-      // deep abyss in dark mode — never a black pool on a white page.
-      if (seaMat) {
-        seaMat.color.setHex(light ? 0xbdd0e4 : 0x0a1626);
-        seaMat.opacity = light ? 0.96 : 0.9;
-      }
+      // Water + grid follow the site theme with the APP's own palette
+      // (webui mapTerrain ensureWaterFloor / reapplyWaterTheme): soft paper
+      // blue in light mode, deep abyss in dark mode — never a black pool on
+      // a white page.
+      if (waterFloorMat) waterFloorMat.color.setHex(light ? 0xd7e2ec : 0x05121f);
+      if (seaMat) seaMat.color.setHex(light ? 0xc2d5e4 : 0x071827);
       if (gridMat) {
         gridMat.color.setHex(light ? 0x35507a : 0xffffff);
         gridMat.opacity = light ? 0.10 : 0.055;
@@ -545,6 +575,12 @@ export default defineComponent({
         selfHp.value = h;
         selfMaxHp.value = mx;
         selfDead.value = selfNode.die !== undefined && battleT > selfNode.die;
+        // Plaque art precedence matches the app: the game's own bitmap
+        // (cropped to its alpha band) wins; the traced vector path stays as
+        // the fallback for a ship whose bitmap the bake could not ship.
+        const art = silArt[selfNode.model];
+        selfSilhouetteUrl.value = art ? `${base}/silhouettes/${art.file}` : null;
+        selfSilhouetteBox.value = art ? { top: art.top, bottom: art.bottom } : null;
         selfSilhouette.value = silhouettes[selfNode.model]?.path ?? null;
         // Repairable pool: approximating the repair-party pool as 60% of the
         // damage taken (BB-class standard) until the replay carries it.
@@ -555,17 +591,35 @@ export default defineComponent({
         selfRep.value = null;
         selfDead.value = false;
         selfSilhouette.value = null;
+        selfSilhouetteUrl.value = null;
+        selfSilhouetteBox.value = null;
       }
 
       for (const m of materials) {
         if ((m as THREE.ShaderMaterial).uniforms?.time) tickHolo(m as THREE.ShaderMaterial, dt);
       }
 
-      // ── top-down overview camera: close-ish, slow drift, slight tilt ──
-      const ang = now / 1000 * 0.03;
-      const r = 300;
-      camera.position.set(Math.cos(ang) * r, 1250 + Math.sin(now / 1000 * 0.07) * 35, Math.sin(ang) * r);
-      camera.lookAt(0, 0, 0);
+      // ── Camera: the app's opening pose, swaying gently ──
+      // fitCamera puts the camera at (cx, span/2, cz + span/2) — 45°
+      // elevation over the battle centre, looking north. Keeping that SAME
+      // elevation (orbit radius = height) preserves the tilt, the framing
+      // and the relative scale of ships/cap rings; the azimuth only SWAYS
+      // ±~30° around the app's north-facing pose instead of orbiting, so the
+      // composition stays the app's own view (caps across the frame) and
+      // never rolls the map out of the card.
+      // ang = 0 IS the app's opening pose: camera on the +scene-z side of the
+      // battle centre looking north (fitCamera's (cx, span/2, cz + span/2)).
+      // sin/cos are ordered so the sway rotates around THAT pose — with
+      // cos/sin the base pose sat 90° off (east/west), which made a cap row
+      // along world x recede diagonally instead of running across the frame.
+      const ang = Math.sin(now / 1000 * FRAME.swaySpeed) * FRAME.swayRad;
+      const horiz = rig.dist * Math.SQRT1_2;
+      camera.position.set(
+        rig.cx + Math.sin(ang) * horiz,
+        horiz,
+        rig.cz + Math.cos(ang) * horiz,
+      );
+      camera.lookAt(rig.cx, 0, rig.cz);
 
       // cap zones: ring colours + projected letters (+ Alt-hold capture ETA)
       const caps = capStateAt(battleT);
@@ -573,13 +627,13 @@ export default defineComponent({
       for (let i = 0; i < caps.length; i++) {
         const c = caps[i];
         const zone = capZones[i];
-        const mats = capRingMats[i];
-        if (mats) {
+        const ringMat = capRingMats[i];
+        if (ringMat) {
+          // Owner tint + the app's own opacity ladder (markerUpdate):
+          // capturing 0.7, contested 0.5, otherwise a faint 0.35.
           const color = c.owner === "ally" ? 0x4ade80 : c.owner === "enemy" ? 0xcc3333 : 0xffffff;
-          mats.ring.color.setHex(color);
-          mats.ring.opacity = c.owner === "neutral" ? 0.55 : 0.8;
-          mats.fill.color.setHex(color);
-          mats.fill.opacity = c.owner === "neutral" ? 0.05 : 0.14;
+          ringMat.color.setHex(color);
+          ringMat.opacity = c.capturing ? 0.7 : c.contested ? 0.5 : 0.35;
         }
         const pr = projectToStage(zone.x, capY, -zone.z);
         // Only a point UNDER CAPTURE shows a timer (remaining seconds) —
@@ -638,6 +692,40 @@ export default defineComponent({
       } catch {
         silhouettes = {};
       }
+      try {
+        silArt = (await (await fetch(`${base}/silhouettes-index.json`)).json()) as Record<string, { file: string; top: number; bottom: number }>;
+      } catch {
+        silArt = {};
+      }
+
+      // Camera rig from the battle's OWN bounds (the app fits the camera to
+      // the replay's map rect): centre of everything the playback touches,
+      // and a span that carries the whole engagement.
+      {
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (const t of Object.values(bundle.tracks)) {
+          for (let i = 0; i < t.x.length; i++) {
+            const x = t.x[i], z = t.z[i];
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+          }
+        }
+        for (const c of bundle.caps) {
+          if (c.x < minX) minX = c.x;
+          if (c.x > maxX) maxX = c.x;
+          if (c.z < minZ) minZ = c.z;
+          if (c.z > maxZ) maxZ = c.z;
+        }
+        const span = Math.max(maxX - minX, maxZ - minZ, 200);
+        // Scene z mirrors world z (same convention as every marker).
+        rig = {
+          cx: (minX + maxX) / 2,
+          cz: -(minZ + maxZ) / 2,
+          dist: span * FRAME.distPerSpan,
+        };
+      }
 
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -646,18 +734,34 @@ export default defineComponent({
       host.value.appendChild(renderer.domElement);
 
       scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(60, 1, 1, 9000);
+      // The app replay view's own vertical field of view (webui
+      // EXPORT_GOD_FOV_DEG / the fitCamera opening pose both work at 50°).
+      camera = new THREE.PerspectiveCamera(FRAME.fov, 1, 1, 9000);
       camera.position.set(0, 1500, 380);
       camera.lookAt(0, 0, 0);
 
-      // sea surface — oversized so it always covers the stage, theme-tinted
+      // Water, exactly the app's two-plane scheme (webui mapTerrain
+      // ensureWaterFloor): an opaque deep floor far below the terrain so the
+      // height-field's cut edge dissolves into open sea, plus a translucent
+      // surface at y≈0 that lets islands poke through and keeps the HUD
+      // readable over open water.
+      const floorGeom = new THREE.PlaneGeometry(6000, 6000);
+      waterFloorMat = new THREE.MeshBasicMaterial({ color: 0x05121f });
+      const floor = new THREE.Mesh(floorGeom, waterFloorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -40;
+      floor.renderOrder = -1;
+      scene.add(floor);
+      geometries.push(floorGeom); materials.push(waterFloorMat);
+
       const seaGeom = new THREE.PlaneGeometry(6000, 6000);
       seaMat = new THREE.MeshBasicMaterial({
-        color: 0x0a1626, transparent: true, opacity: 0.9, depthWrite: true,
+        color: 0x071827, transparent: true, opacity: 0.45, depthWrite: false,
       });
       const sea = new THREE.Mesh(seaGeom, seaMat);
       sea.rotation.x = -Math.PI / 2;
-      sea.position.y = -0.5;
+      sea.position.y = 0.6;
+      sea.renderOrder = 5;
       scene.add(sea);
       geometries.push(seaGeom); materials.push(seaMat);
 
@@ -713,29 +817,23 @@ export default defineComponent({
       // ordering it last keeps it on top from every camera angle.
       capY = Math.max(2.2, terrainMaxY + 2.5);
       {
+        // Line-only rings, like the app's overlay rings (webui actorBuild
+        // makeOverlayRing): no filled disc — the app draws just the stroke,
+        // tinted by owner and dimmed unless the point is being taken.
         const ringGeom = new THREE.RingGeometry(CAP_RING_R - 4, CAP_RING_R, 64);
-        const fillGeom = new THREE.CircleGeometry(CAP_RING_R - 4, 48);
-        geometries.push(ringGeom, fillGeom);
+        geometries.push(ringGeom);
         for (const c of capZones) {
           const ringMat = new THREE.MeshBasicMaterial({
-            color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide,
-            depthWrite: false, depthTest: false,
-          });
-          const fillMat = new THREE.MeshBasicMaterial({
-            color: 0xffffff, transparent: true, opacity: 0.03, side: THREE.DoubleSide,
+            color: 0xffffff, transparent: true, opacity: 0.35, side: THREE.DoubleSide,
             depthWrite: false, depthTest: false,
           });
           const ring = new THREE.Mesh(ringGeom, ringMat);
-          const fill = new THREE.Mesh(fillGeom, fillMat);
           ring.rotation.x = -Math.PI / 2;
-          fill.rotation.x = -Math.PI / 2;
           ring.position.set(c.x, capY, -c.z);
-          fill.position.set(c.x, capY - 0.2, -c.z);
           ring.renderOrder = 10;
-          fill.renderOrder = 9;
-          scene.add(ring, fill);
-          materials.push(ringMat, fillMat);
-          capRingMats.push({ ring: ringMat, fill: fillMat });
+          scene.add(ring);
+          materials.push(ringMat);
+          capRingMats.push(ringMat);
         }
       }
 
@@ -894,6 +992,8 @@ export default defineComponent({
                 <HoloShipCard
                   data={{
                     shipType: selfShip.value?.type,
+                    silhouetteUrl: selfSilhouetteUrl.value,
+                    silhouetteBox: selfSilhouetteBox.value,
                     silhouette: selfSilhouette.value,
                     name: selfShip.value ? (isZh() ? selfShip.value.nameZh : selfShip.value.nameEn) : undefined,
                     hp: selfHp.value,

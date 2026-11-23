@@ -519,6 +519,17 @@ bake-maps *ARGS:
 bake-optimize *ARGS:
     python scripts/model_convert/optimize_glbs.py {{ARGS}}
 
+# Bake one .wowsreplay dump into the marketing site's replay bundle
+# (battle.json + the GLB copy list). The dump comes from the Rust decoder's
+# dump_replay_json test (WOWSP_TEST_REPLAY), see the script's docstring.
+bake-site-replay *ARGS:
+    python scripts/bake_site_replay.py {{ARGS}}
+
+# Copy the game's own plaque silhouette art for a baked battle's roster and
+# write its lookup — run AFTER bake-site-replay whenever the roster changes.
+bake-site-silhouettes *ARGS:
+    python scripts/bake_site_silhouettes.py {{ARGS}}
+
 # ── extract ───────────────────────────────────────────────────────────
 #   just extract                  → auto-detect game, run all modules
 #   just extract --path D:\WoWS   → explicit game path
