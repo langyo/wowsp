@@ -148,8 +148,14 @@ VIEWS: list[dict] = [
         "extra": "open_first_replay",
         # The results pill no longer owns a loading face (the WINDOW does), so
         # the stream-settled signal is the meta header's decode attribute.
+        # The decoded stream alone is not a docs shot: the map's HUD (score
+        # strip, recorder plaque, minimap) mounts with the 3D stage, and a
+        # capture that beats it is a bare map — so require all four.
         "post_ready": "document.querySelector('.replay-view__detail') !== null"
-                      " && document.querySelector('.replay-view__meta[data-replay-decode=\"settled\"]') !== null",
+                      " && document.querySelector('.replay-view__meta[data-replay-decode=\"settled\"]') !== null"
+                      " && document.querySelector('.holo-map__scorebar-wrap') !== null"
+                      " && document.querySelector('.holo-map__shipcard') !== null"
+                      " && document.querySelector('.holo-map__minimap') !== null",
         "settle": 6.0,
         "timeout": 120.0,
     },
@@ -207,6 +213,11 @@ VIEWS: list[dict] = [
 # charts drawing themselves).
 POST_SETTLE = 2.0
 
+# Every capture must land at ONE pixel size (docs images are a set). The rig
+# overrides this from --size; a mismatch means the window moved to a monitor
+# with a different DPI mid-run, which silently produced half-size images.
+EXPECT_SIZE: tuple[int, int] | None = None
+
 # True once the Vue app has mounted (index.html dismisses #loading-screen).
 MOUNTED = "document.querySelector('#loading-screen.hidden, .sidebar') !== null"
 
@@ -216,6 +227,81 @@ MOUNTED = "document.querySelector('#loading-screen.hidden, .sidebar') !== null"
 LOADING_CLEAR = (
     "document.querySelector('.titlebar-loading-slot .hk-persistent-toast') === null"
 )
+
+# Blocking consent cards never auto-dismiss and belong to no view: the
+# pre-launch mod-conflict gate (ModConflictToast -> hikari's blocking-toast
+# host) parks a red ask-to-resolve card over the map HUD whenever the game
+# install has mod problems. A docs capture that keeps it ships that card as
+# part of the UI (the retry-locale refresh did exactly that for ja/ru/zh-CN).
+# The dismiss action is the card's SECOND button (知道了 / Cancel); answering
+# latches the session, so one click per locale/theme pass keeps every later
+# view clean.
+BLOCKING_CARD_DISMISS = (
+    ".hk-blocking-toast-card .hk-blocking-toast-actions button:last-child"
+)
+
+# Persistent title-bar toasts (upstream fault, slow stream, external-service
+# failure, autosave) are transient environment state, not product UI, and they
+# sit in the title bar's centre band where no other probe looks — one whole
+# ru-dark pass shipped with a 'Сбой внешнего сервиса' chip in all eight frames.
+# Only the dismissible ones carry the ✕ sibling button.
+TITLEBAR_TOAST_DISMISS = ".hk-persistent-toast__dismiss"
+
+
+def clear_titlebar_toasts(d: WowspDriver, seconds: float = 1.0) -> None:
+    """Dismiss persistent title-bar toasts (up to a few at a time).
+
+    Loop-clicks every dismiss button in the stack for `seconds`; a no-op when
+    none is up.
+    """
+    deadline = time.monotonic() + seconds
+    while True:
+        for index in range(4):
+            d.click(TITLEBAR_TOAST_DISMISS, index)
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.2)
+
+
+def clear_blocking_cards(d: WowspDriver, seconds: float = 1.0) -> None:
+    """Answer blocking consent cards (dismiss) for `seconds`, so none lands
+    in a shot.
+
+    Time-budgeted on purpose: the mod-conflict gate is raised by a scan that
+    finishes SECONDS after a reload (the shell remounts per locale/theme
+    switch), so a single click at navigation time is too early — the card
+    appears during the readiness wait and the capture keeps it. Clicking in a
+    loop is harmless: the selector matches nothing when no card is up, and
+    the first answer latches the session so later passes stay clean.
+    """
+    deadline = time.monotonic() + seconds
+    while True:
+        d.click(BLOCKING_CARD_DISMISS)
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.2)
+
+# Dev-only chrome that must never appear in a docs capture: the title-bar
+# subtitle (debug builds append the compile-time `branch:hash7` stamp, and
+# the version chip is product noise in a screenshot) and the holographic
+# perf HUD (Vite dev mode turns it on for every 3D view). Release builds
+# ship neither, but the capture rig usually drives a dev build — pin the
+# clean look here so no capture can leak a branch name or a 2 fps card.
+CLEAN_CHROME_CSS = (
+    ".hk-titlebar-subtitle, .hk-debug-float, "
+    ".holo-perf-hud-root, .holo-perf-hud { display: none !important; }"
+)
+
+
+def clean_chrome(d: WowspDriver) -> None:
+    """Strip dev-only chrome from the document (idempotent, per page load)."""
+    d.eval(
+        "(function(){var id='wowsp-docs-clean';"
+        "if(document.getElementById(id))return;"
+        "var s=document.createElement('style');s.id=id;"
+        f"s.textContent={json.dumps(CLEAN_CHROME_CSS)};"
+        "document.head.appendChild(s);})()"
+    )
 
 
 # ── readback channel ────────────────────────────────────────────────────
@@ -424,6 +510,89 @@ def webp_name(stem: str, theme_suffix: str) -> str:
 # ── main phases ─────────────────────────────────────────────────────────
 
 
+# The red ask-to-resolve card is the one thing that must never land in a docs
+# frame. It is unmistakable: a saturated red slab in the top-right quadrant
+# (where the toast column sits). Anything above this share of that quadrant is
+# the card, not UI chrome.
+CONFLICT_CARD_RED_SHARE = 0.10
+
+
+def conflict_card_ratio(path: Path) -> float:
+    """Share of the top-right quadrant painted with the conflict card red.
+
+    Pure Pillow (no numpy): the capture script ships with Pillow only, so the
+    three red-dominance tests run as chained binary masks.
+    """
+    from PIL import Image, ImageChops
+
+    with Image.open(path) as im:
+        w, h = im.size
+        quad = im.convert("RGB").crop((
+            (int(w * 0.60), int(h * 0.05), int(w * 0.95), int(h * 0.30))
+        ))
+    r, g, b = quad.split()
+
+    def over(channel, other, delta):
+        return ImageChops.subtract(channel, other).point(
+            lambda v: 255 if v > delta else 0
+        )
+
+    mask = ImageChops.multiply(over(r, g, 60), over(r, b, 60))
+    mask = ImageChops.multiply(mask, r.point(lambda v: 255 if v > 130 else 0))
+    total = quad.size[0] * quad.size[1]
+    if not total:
+        return 0.0
+    return mask.histogram()[255] / float(total)
+
+
+# A capture must contain the app CHROME, not just a content surface: the
+# Windows capture path sometimes returns a partially composited window (the
+# titlebar and sidebar never drawn), which shipped content-only frames in the
+# 2026-11-24 refresh. Both probe regions carry high-contrast text in every
+# view — the product name in the titlebar and the footer cards' labels — so
+# their luma spread proves the chrome is there (clean frames measure 66-75 /
+# 14-54; the chomeless ones 0-5.5 / 1.2-1.4).
+CHROME_PROBES = (
+    ("titlebar", 0.013, 0.0125, 0.066, 0.034, 30.0),
+    ("sidebar footer", 0.012, 0.774, 0.195, 0.831, 8.0),
+)
+
+# A persistent title-bar toast lives between the product name and the window
+# buttons, where no chrome probe looks: measured over the whole set, this band
+# is flat (<= 24) except where a chip sits, which lifts it to ~49 (a ru-dark pass
+# shipped with 'Сбой внешнего сервиса' in all eight frames). Wide bands are not
+# usable - the live view's tab pill and the ships header legitimately paint the
+# centre of the bar.
+TOAST_BAND = ("title bar toast", 0.74, 0.015, 0.88, 0.030, 34.0)
+
+
+def missing_chrome(path: Path) -> str | None:
+    """Name the chrome region a frame is missing, or None when it is whole."""
+    from PIL import Image, ImageStat
+
+    with Image.open(path) as im:
+        grey = im.convert("L")
+        w, h = grey.size
+        for region, left, top, right, bottom, min_std in CHROME_PROBES:
+            box = (int(w * left), int(h * top), int(w * right), int(h * bottom))
+            std = ImageStat.Stat(grey.crop(box)).stddev[0]
+            if std < min_std:
+                return region
+    return None
+
+
+def titlebar_toast_present(path: Path) -> bool:
+    """True when a persistent toast chip sits in the title bar's centre band."""
+    from PIL import Image, ImageStat
+
+    _, left, top, right, bottom, max_std = TOAST_BAND
+    with Image.open(path) as im:
+        grey = im.convert("L")
+        w, h = grey.size
+        box = (int(w * left), int(h * top), int(w * right), int(h * bottom))
+        return ImageStat.Stat(grey.crop(box)).stddev[0] > max_std
+
+
 def capture_best(d: WowspDriver, name: str, gap: float = 4.0) -> Path:
     """Capture twice and keep the larger PNG.
 
@@ -470,6 +639,11 @@ def capture_view(d: WowspDriver, sig: Signals, docs_lang: str, view: dict,
                 d.goto(route)
 
     reach()
+    # A blocking card raised before/while the view loads would sit in the
+    # shot (it never auto-dismisses); answer it first, then wait for readiness.
+    clear_blocking_cards(d, 0.5)
+    clear_titlebar_toasts(d, 0.3)
+    clean_chrome(d)
     cond = f"({view['ready']}) && ({MOUNTED}) && ({LOADING_CLEAR})"
     timeout = view.get("timeout", 120.0)
     ok = sig.wait_for(d, cond, timeout=timeout, label=f"{label} ready")
@@ -498,7 +672,53 @@ def capture_view(d: WowspDriver, sig: Signals, docs_lang: str, view: dict,
             if not ok2:
                 MISSED.append(f"{label} (post)")
     time.sleep(view.get("settle", 0.0))
-    path = capture_best(d, raw_stem(docs_lang, stem, theme_suffix))
+    # Final guarantee: the conflict scan lands seconds after the reload, so
+    # keep answering cards through the capture window.
+    clear_blocking_cards(d, 5.0)
+    clear_titlebar_toasts(d, 1.5)
+    time.sleep(0.3)
+    raw_name = raw_stem(docs_lang, stem, theme_suffix)
+    path = capture_best(d, raw_name)
+    # Self-healing: the conflict scan lands seconds after the reload, and the
+    # Windows capture path can hand back a partially composited window. Both
+    # defects are provable from the frame's own pixels, so shoot again instead of
+    # shipping it.
+    for attempt in range(3):
+        if not path.exists():
+            break
+        ratio = conflict_card_ratio(path)
+        if ratio >= CONFLICT_CARD_RED_SHARE:
+            problem = (
+                f"conflict card in frame ({ratio:.0%} of the query corner)"
+            )
+            clear_blocking_cards(d, 6.0)
+        else:
+            region = missing_chrome(path)
+            problem = (
+                f"{region} chrome missing (partial window surface)"
+                if region
+                else None
+            )
+            if problem is None and titlebar_toast_present(path):
+                problem = "persistent title bar toast"
+                clear_titlebar_toasts(d, 2.0)
+        if problem is None:
+            break
+        print(f"   !! {path.name}: {problem}, re-capturing", flush=True)
+        MISSED.append(f"{label} {problem.split()[0]} retry")
+        time.sleep(2.0)
+        path = capture_best(d, raw_name)
+    if EXPECT_SIZE and path.exists():
+        from PIL import Image as _Image
+
+        with _Image.open(path) as shot:
+            if shot.size != EXPECT_SIZE:
+                print(
+                    f"   !! {path.name}: {shot.size} != expected {EXPECT_SIZE}"
+                    " (window moved to a different DPI/monitor?)",
+                    flush=True,
+                )
+                MISSED.append(f"{label} size {shot.size}")
     size = path.stat().st_size if path.exists() else 0
     print(f"   {stem:<10}{theme_suffix or '':<6} {path.name}  {size / 1024:.0f} KB", flush=True)
     return path
@@ -533,6 +753,28 @@ def raw_screenshot_dir() -> Path:
     return Path(base) / "WoWSP" / "screenshots"
 
 
+# The whole gallery is one pixel size (the site lays it out in a fixed aspect
+# ratio). The capture window lands within a few pixels of it depending on the
+# display scale, so a near-miss is normalised here instead of shipping a set
+# where one locale is 2534x1585 and the next 2560x1601.
+CANONICAL_SIZE = (2560, 1600)
+CANONICAL_TOLERANCE = 8
+
+
+def _canonical_size(img, dst):
+    """Snap a near-miss capture onto CANONICAL_SIZE; leave real drift alone."""
+    from PIL import Image as _Image
+
+    w, h = img.size
+    cw, ch = CANONICAL_SIZE
+    if (w, h) == (cw, ch):
+        return img
+    if abs(w - cw) <= CANONICAL_TOLERANCE and abs(h - ch) <= CANONICAL_TOLERANCE:
+        return img.resize(CANONICAL_SIZE, _Image.LANCZOS)
+    print(f"   !! {dst.name}: {img.size} is not near {CANONICAL_SIZE}", file=sys.stderr)
+    return img
+
+
 def convert_all(locales: dict[str, str], themes: list[tuple[str, str, str]],
                 repo_root: Path,
                 views: list[dict] | None = None) -> None:
@@ -553,6 +795,7 @@ def convert_all(locales: dict[str, str], themes: list[tuple[str, str, str]],
                     continue
                 dst = out_dir / webp_name(stem, theme_suffix)
                 with Image.open(src) as img:
+                    img = _canonical_size(img, dst)
                     img.save(dst, "WEBP", quality=90, method=6)
                     size = img.size
                 total += dst.stat().st_size
@@ -572,8 +815,15 @@ def main() -> int:
     ap.add_argument("--views", nargs="*", default=None,
                     help="subset of view stems to capture (default: all)")  # noqa: OK
     ap.add_argument("--skip-capture", action="store_true", help="only convert")
+    ap.add_argument("--size", default=None,
+                    help="WxH every capture must match (warns on drift)")
     ap.add_argument("--skip-convert", action="store_true", help="only capture")
     args = ap.parse_args()
+
+    if args.size:
+        global EXPECT_SIZE
+        w, h = args.size.lower().split("x")
+        EXPECT_SIZE = (int(w), int(h))
 
     locales = LOCALES
     if args.locales:
