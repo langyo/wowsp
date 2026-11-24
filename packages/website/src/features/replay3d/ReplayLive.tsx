@@ -52,14 +52,35 @@ const MAP_BOUNDS: HoloBounds = { minX: -700, maxX: 700, minZ: -700, maxZ: 700 };
  *  so the same fallback keeps ring proportions identical to the app's. */
 const CAP_RING_R = 150;
 
-/** The game's own HUD ship icons (bundled with the site assets). */
+/** The game's battle-HUD ship markers. The site ships the SAME SVG glyph
+ *  art the app registers (scripts/model_convert/ship_class_glyphs.py authors
+ *  it as geometry - flat hull, bow wedge, speed slashes - so it stays crisp
+ *  at 15 px and any DPR). The old .png markers this pointed at were the
+ *  traced 27 px bitmaps, whose stair-stepped ink made the site's strip read
+ *  like a hand-made copy of the app's scorebar. */
 const ICON_BASE = `${siteBase}icons/ships`;
-const ICON_CLASSES = ["battleship", "cruiser", "destroyer", "aircarrier", "submarine"] as const;
+const ICON_CLASSES = [
+  "battleship", "cruiser", "destroyer", "aircarrier", "submarine", "auxiliary",
+] as const;
 for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
   registerHoloShipIcons(
     variant,
-    Object.fromEntries(ICON_CLASSES.map((c) => [c, `${ICON_BASE}/icon_${variant}_${c}.png`])),
+    Object.fromEntries(ICON_CLASSES.map((c) => [c, `${ICON_BASE}/icon_${variant}_${c}.svg`])),
   );
+}
+
+/** Ship-class size weight for the scorebar strip - the app's own ladder
+ *  (webui HolographicMap shipRows): carriers/battleships biggest, subs
+ *  smallest, unknown last. The strip reads biggest-to-smallest toward each
+ *  edge, so the two fleets mirror each other around the cap letters. */
+function classWeight(type: string | null | undefined): number {
+  const t = (type ?? "").toLowerCase();
+  if (t.includes("aircarrier") || t.includes("aircar")) return 5;
+  if (t.includes("battleship")) return 4;
+  if (t.includes("cruiser")) return 3;
+  if (t.includes("destroyer")) return 2;
+  if (t.includes("submarine")) return 1;
+  return 0;
 }
 
 function roleOf(rel: number): keyof typeof ROLE_COLOR {
@@ -533,7 +554,13 @@ export default defineComponent({
         }));
 
       let allies = 0, enemies = 0, scoreA = 0, scoreE = 0;
-      const shipStates: HoloShip[] = [];
+      // Scorebar strip slots, split by side and SORTED like the app
+      // (webui HolographicMap shipRows): sunk ships form their own group at
+      // each side's outer edge - allies put the dead group left, enemies put
+      // it right - and within a group the bigger hulls sit toward that same
+      // outer edge, so the two rows mirror each other.
+      const stripAllies: HoloShip[] = [];
+      const stripEnemies: HoloShip[] = [];
       const tags: HoloLabelData[] = [];
       for (const s of ships) {
         const dead = s.die !== undefined && battleT > s.die;
@@ -544,8 +571,6 @@ export default defineComponent({
         if (ghost) ghost.uniforms.ghostAlpha.value = dead ? 0.15 : 1;
         if (s.rel === 2) { if (dead) scoreE += 100; else enemies++; }
         else { if (dead) scoreA += 100; else allies++; }
-        shipStates.push({ x: 0, z: 0, yaw: 0, role: roleOf(s.rel), dead, shipType: s.type });
-
         const pr = projectToStage(p.x, 20, -p.z);
         const role = roleOf(s.rel);
         const cur = Math.min(battleT, s.die ?? battleT);
@@ -562,7 +587,25 @@ export default defineComponent({
           hp: hp ?? null,
           maxHp: maxHp ?? null,
         });
+        // Same slot payload the app hands the scorebar (name + the live HP
+        // feed drive the hover hint and the damaged-only mini HP bar).
+        const slot: HoloShip = {
+          x: 0, z: 0, yaw: 0, key: s.key,
+          name: s.playerName,
+          role: roleOf(s.rel),
+          dead, shipType: s.type,
+          hp: hp ?? null,
+          maxHp: maxHp ?? null,
+        };
+        (s.rel === 2 ? stripEnemies : stripAllies).push(slot);
       }
+      stripAllies.sort(
+        (a, b) => Number(b.dead) - Number(a.dead) || classWeight(b.shipType) - classWeight(a.shipType),
+      );
+      stripEnemies.sort(
+        (a, b) => Number(a.dead) - Number(b.dead) || classWeight(a.shipType) - classWeight(b.shipType),
+      );
+      const shipStates: HoloShip[] = [...stripAllies, ...stripEnemies];
       nameTags.value = mmShowTags.value ? tags : [];
 
       // recorder ship health plaque (bottom-left)
