@@ -363,7 +363,11 @@ jobs:
     # phenomenon is draft-only, a published release owns its tag binding.
     # It also removes the manual `gh release edit` step, where publishing
     # a dangling draft would mint a literal `untagged-…` git tag and
-    # orphan the real one.
+    # orphan the real one. And it consolidates the duplicate same-titled
+    # drafts the notes job can create when the async revert hides the
+    # upload draft from its by-tag lookup (v0.6.10 / v0.6.11 incidents):
+    # the assets-bearing draft wins, a missing body is carried over, and
+    # the empty duplicates are deleted before anything is published.
     needs: [preflight, release-notes]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
@@ -405,22 +409,72 @@ jobs:
 
           # Resolve the run's release: by tag first (works once tag_name is
           # right, and for a re-run after a previous publish), else page the
-          # release list for OUR draft by its deterministic title — the only
-          # release ever named "WoWSP $ref" (a reverted draft is invisible
+          # release list for OUR drafts by the deterministic title — the only
+          # releases ever named "WoWSP $ref" (a reverted draft is invisible
           # by tag: its tag_name IS the untagged slug).
-          rel_id="$(gh api "$api_base/releases/tags/$ref" --jq .id 2>/dev/null)" || rel_id=""
-          if [ -z "$rel_id" ] || [ "$rel_id" = "null" ]; then
-            echo "note: $ref not resolvable by tag — paging for the draft by title"
-            for page in 1 2 3 4 5; do
-              rel_id="$(gh api "$api_base/releases?per_page=100&page=$page" \
-                --jq "[.[] | select(.name == \"WoWSP $ref\")][0].id" 2>/dev/null)" || rel_id=""
-              [ -n "$rel_id" ] && [ "$rel_id" != "null" ] && break
-            done
-          fi
-          if [ -z "$rel_id" ] || [ "$rel_id" = "null" ]; then
+          #
+          # Duplicates happen: the release-notes job resolves its draft by
+          # tag too, and when the async untagged-slug revert hides the
+          # upload job's draft from it, it CREATES a second same-titled
+          # draft carrying only the body (observed on v0.6.10 and v0.6.11;
+          # the old first-title-match pick then raced onto the asset-less
+          # draft and the asset guard refused). Consolidate instead: pick
+          # the candidate holding the full asset set, carry over a body
+          # the survivor lacks, delete the remaining DRAFT duplicates, and
+          # let the settle loop below run against the one survivor.
+          want_assets() {
+            printf '%s\n' \
+              "WoWSP_${ver}_x64-installer.exe" \
+              "WoWSP_${ver}_x64-installer-lite.exe" \
+              "WoWSP_${ver}_x64-installer-webview2.exe" \
+              "WoWSP_${ver}_x64-portable.exe" \
+              latest
+          }
+          candidates="$(gh api "$api_base/releases/tags/$ref" --jq .id 2>/dev/null)" || candidates=""
+          for page in 1 2 3 4 5; do
+            page_ids="$(gh api "$api_base/releases?per_page=100&page=$page" \
+              --jq "[.[] | select(.name == \"WoWSP $ref\") | .id] | .[]" 2>/dev/null)" || page_ids=""
+            [ -n "$page_ids" ] && candidates="$(printf '%s\n%s\n' "${candidates:-}" "$page_ids")"
+          done
+          candidates="$(printf '%s\n' "$candidates" | sed '/^$/d' | awk '!seen[$0]++')"
+          if [ -z "$candidates" ]; then
             echo "::error::no release found for $ref — refusing to publish"
             exit 1
           fi
+          echo "note: candidate release(s) for $ref: $(printf '%s' "$candidates" | tr '\n' ' ')"
+          rel_id=""
+          for cand in $candidates; do
+            have="$(gh api "$api_base/releases/$cand" --jq '.assets[].name' 2>/dev/null)" || have=""
+            complete=1
+            while IFS= read -r want; do
+              [ -n "$want" ] || continue
+              printf '%s\n' "$have" | grep -qxF "$want" || { complete=0; break; }
+            done < <(want_assets)
+            if [ "$complete" = 1 ]; then rel_id="$cand"; break; fi
+          done
+          if [ -z "$rel_id" ]; then
+            echo "::error::no candidate release for $ref carries the full asset set — refusing to publish"
+            for cand in $candidates; do
+              echo "note: candidate $cand assets:"
+              gh api "$api_base/releases/$cand" --jq '.assets[].name' 2>/dev/null | sed 's/^/note:   /' || true
+            done
+            exit 1
+          fi
+          for cand in $candidates; do
+            [ "$cand" = "$rel_id" ] && continue
+            is_draft="$(gh api "$api_base/releases/$cand" --jq .draft 2>/dev/null)" || is_draft=""
+            [ "$is_draft" = "true" ] || { echo "note: candidate $cand is not a draft — leaving it alone"; continue; }
+            rel_body_len="$(gh api "$api_base/releases/$rel_id" --jq '.body | length' 2>/dev/null)" || rel_body_len=0
+            cand_body_len="$(gh api "$api_base/releases/$cand" --jq '.body | length' 2>/dev/null)" || cand_body_len=0
+            if [ "$rel_body_len" -lt 500 ] && [ "$cand_body_len" -gt "$rel_body_len" ]; then
+              echo "note: carrying the body from duplicate draft $cand onto $rel_id"
+              gh api "$api_base/releases/$cand" --jq .body \
+                | jq -Rs '{body: .}' \
+                | gh api -X PATCH "$api_base/releases/$rel_id" --input - >/dev/null
+            fi
+            echo "note: deleting duplicate draft $cand"
+            gh api -X DELETE "$api_base/releases/$cand" >/dev/null
+          done
 
           tag="$(gh api "$api_base/releases/$rel_id" --jq .tag_name)"
           echo "note: release $rel_id currently tagged '$tag'"
