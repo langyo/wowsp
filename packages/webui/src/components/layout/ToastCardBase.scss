@@ -9,7 +9,11 @@
 // ONE indeterminate slide — the six per-card sheets each used to carry a
 // byte-identical copy. The slot is single-occupancy by design: two
 // simultaneous passes overlap exactly, the documented trade-off; no
-// stacking/queueing is added here.
+// stacking/queueing is added here. Card geometry top to bottom: the
+// headline row (whole line free to ellipsize), the body slot, the foot
+// row (the never-shrinking meta on its left, the right-aligned action
+// area — pills or the icon × cancel — on its right) and the progress
+// bar.
 
 .toast-card {
   position: fixed;
@@ -110,14 +114,33 @@
   }
 }
 
-// The never-shrinking readout beside the headline (the mod pass's live
-// percent + rate): its own flex child keeping its intrinsic width, so a
-// long headline can never cut the progress off the card. Tabular figures
-// keep the digits from jittering while the rate updates.
+// The never-shrinking readout, now living in the foot row's left (it
+// moved out of the headline row — the mod pass's live percent + rate;
+// the row the 取消 pill used to own): its own flex child keeping its
+// intrinsic width, so neither a long headline nor a flexing action area
+// can cut the numbers off the card. Tabular figures keep the digits
+// from jittering while the rate updates.
 .toast-card__meta {
   flex: 0 0 auto;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+// The foot row: meta left, actions right, its own line between the body
+// and the progress bar. overflow: hidden is the escape guard — a
+// pathological (unbreakable) meta string must not bleed out of the
+// fixed 22rem card.
+.toast-card__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  overflow: hidden;
+}
+
+// Restated for the foot on purpose: even as the action area flexes, the
+// meta keeps its intrinsic width — never a shrinking readout.
+.toast-card__foot .toast-card__meta {
+  flex: 0 0 auto;
 }
 
 .toast-card__actions {
@@ -126,11 +149,21 @@
   gap: var(--space-8);
 }
 
+// Inside the foot the action area takes the remaining width and
+// right-aligns its buttons, with or without a meta on the row's left —
+// min-width: 0 lets it shrink instead of pushing the meta out.
+.toast-card__foot .toast-card__actions {
+  flex: 1;
+  min-width: 0;
+}
+
 // Action pills. primary = the filled white pill (the card's main move —
 // the hikari secondary variant would sink into the colored surfaces);
 // outline = the translucent white outline (the quiet fallback that stays
 // legible without competing with the primary); quiet = the small outlined
-// text button (the pass card's 取消 — not a full pill).
+// text button (no current consumer — both former cancel pills, the pass
+// card's and the holographic export card's, became the kind:"close"
+// icon ×; kept as a supported kind).
 .toast-card__action {
   padding: 0.25rem 0.9rem;
   border-radius: 999px;
@@ -207,8 +240,10 @@
   color: #d96a56;
 }
 
-// Quiet × next to the headline — the translucent outline grammar shared
-// by the success / warning / piggy cards' dismiss control.
+// Quiet × — the translucent outline grammar shared by two occupants:
+// the headline row's dismiss control (the success / warning / piggy
+// cards) and the foot row's kind:"close" action (the download card's
+// icon cancel; its label rides as aria-label + tooltip).
 .toast-card__close {
   display: flex;
   align-items: center;

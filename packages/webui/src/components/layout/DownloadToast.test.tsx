@@ -105,6 +105,11 @@ describe("live pass rendering", () => {
     expect(text).toContain(t("settings.downloadStreaming"));
     expect(text).toContain("50%");
     expect(text).toContain("2.0 MB/s");
+    // The live readout lands in the foot row — its dedicated home between
+    // the body and the bar, no longer beside the headline.
+    const foot = card()?.querySelector<HTMLElement>(".toast-card__foot");
+    expect(foot).not.toBeNull();
+    expect(foot?.querySelector(".download-toast__meta")?.textContent).toContain("50%");
     // A known fraction fills the bar instead of animating the indeterminate
     // slide, so the bar and the numbers agree.
     const fill = card()?.querySelector(".toast-card__fill");
@@ -130,11 +135,13 @@ describe("live pass rendering", () => {
     await vi.advanceTimersByTimeAsync(DOWNLOAD_CARD_GRACE_MS + 1);
     await nextTick();
 
-    const cancel = Array.from(card()?.querySelectorAll(".toast-card__action") ?? []).find(
-      (el) => el.textContent === t("settings.cacheCancel"),
-    );
-    expect(cancel).toBeDefined();
-    (cancel as HTMLElement).click();
+    // The cancel is the icon × action now — the pill's label survives as
+    // its accessible name and tooltip.
+    const cancel = card()?.querySelector<HTMLElement>(".toast-card__actions .toast-card__close");
+    expect(cancel).not.toBeNull();
+    expect(cancel?.getAttribute("aria-label")).toBe(t("settings.cacheCancel"));
+    expect(cancel?.getAttribute("data-hint")).toBe(t("settings.cacheCancel"));
+    cancel?.click();
     await nextTick();
     // The card's cancel IS the registry verb — no per-context copy.
     expect(mocks.resCancel).toHaveBeenCalledTimes(1);
