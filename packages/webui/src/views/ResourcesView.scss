@@ -1511,6 +1511,11 @@
   &__actions {
     display: inline-flex;
     align-items: center;
+    /* The partial-state footer carries three actions (uninstall + the two
+       install scopes): in the narrow sheet their labels wrap onto a second
+       line instead of clipping past the pane edge. */
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 0.5rem;
     /* Hugs the right edge whether or not the discussion link shares the
        row with it. */

@@ -34,7 +34,10 @@ import {
 } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
 import { appliesToRealm, realmOfInstall } from "@/features/modhub/servers";
-import { entryClientStatusesOf } from "@/features/modhub/entryClients";
+import {
+  entryClientStateOf,
+  entryClientStatusesOf,
+} from "@/features/modhub/entryClients";
 import {
   relationsByUnit,
   type UnitRelation,
@@ -595,13 +598,11 @@ export function useModHub() {
   // per-client — syncing them would mean reimplementing each as a batch
   // RPC for no user-facing gain.
 
-  /** Fan-out targets while unified sync is on: every detected install,
-   *  the ACTIVE client first, deduped by path. Fewer than two entries
-   *  (single-client machines, or sync off) collapse to [] — callers
-   *  then keep today's single-root behavior, so the fan-out only ever
-   *  WIDENS an op, never changes it. */
-  const syncTargets = computed<GameInstall[]>(() => {
-    if (!modSyncState.value) return [];
+  /** Every detected install, the ACTIVE client first, deduped by path.
+   *  NOT gated on the sync toggle: the catalog pane's explicit
+   *  "all clients" action has to work while the header switch is off —
+   *  that is the whole point of the explicit per-client scope buttons. */
+  const allClientTargets = computed<GameInstall[]>(() => {
     const ordered = [
       ...(config.activeInstall ? [config.activeInstall] : []),
       ...(config.installs ?? []),
@@ -612,6 +613,14 @@ export function useModHub() {
     }
     return out;
   });
+
+  /** Fan-out targets while unified sync is on: the detected installs
+   *  above. Fewer than two entries (single-client machines, or sync off)
+   *  collapse to [] — callers then keep today's single-root behavior, so
+   *  the toggle-driven fan-out only ever WIDENS an op, never changes it. */
+  const syncTargets = computed<GameInstall[]>(() =>
+    modSyncState.value ? allClientTargets.value : [],
+  );
 
   /** The ACTIVE client install (the left-sidebar selection) — exposed
    *  for the banner's "Managing {client} individually" label. */
@@ -671,8 +680,11 @@ export function useModHub() {
     entry: CatalogEntry,
     op: "install" | "uninstall",
     preset?: string,
+    /** Explicit target list. Defaults to the sync-toggle fan-out; the
+     *  catalog pane's explicit all-clients scope passes its own set (that
+     *  scope is deliberately NOT gated on the toggle). */
+    targets: GameInstall[] = syncTargets.value,
   ): Promise<void> {
-    const targets = syncTargets.value;
     const outcomes: SyncClientOutcome[] = [];
     const failures: string[] = [];
     // Quiet notes across EVERY target root, deduped, one card at the end.
@@ -794,8 +806,72 @@ export function useModHub() {
     }
   }
 
-  async function installMod(entry: CatalogEntry, preset?: string) {
-    if (!gameRoot.value || busy.value.has(entry.id) || gameRunning() || safeModeBlocked()) {
+  /** The catalog install, with an EXPLICIT client scope:
+   *  - "auto" — the header toggle's behavior: fan out only while unified
+   *    sync is on; single-client machines keep the per-op toast.
+   *  - "all" — the pane's 全客户端 action: every applicable client still
+   *    MISSING the current version (clients already on it are skipped —
+   *    the button finishes the rollout), never gated on the sync toggle.
+   *  - "this" — the pane's 本客户端 action: the active root only. */
+  async function installMod(
+    entry: CatalogEntry,
+    preset?: string,
+    scope: "auto" | "this" | "all" = "auto",
+  ) {
+    if (!gameRoot.value || busy.value.has(entry.id) || safeModeBlocked()) {
+      return;
+    }
+    // The ACTIVE-root running gate must not abort an ALL-CLIENTS rollout:
+    // fanOutMod already skips each running TARGET client individually
+    // (clientRunning) and speaks the reconcile's quiet warning, so the
+    // action can still serve the other clients while this one runs. Every
+    // other scope keeps the wholesale guard — a single-root write into a
+    // running client is refused by the backend anyway.
+    if (scope !== "all" && gameRunning()) return;
+    // The op's target set. "auto" keeps the sync-toggle fan-out; "this"
+    // is the active root alone (the single-root branch below); "all" is
+    // the partial-state rollout, narrowed to clients whose entry state is
+    // not current (realm-inapplicable ones never qualify — the same rule
+    // the fan-out skips by).
+    const statuses = scope === "all" ? entryClientStatuses(entry) : [];
+    const targets =
+      scope === "all"
+        ? allClientTargets.value.filter((target) => {
+            const state =
+              statuses.find((s) => sameGamePath(s.install.path, target.path))
+                ?.state ??
+              // The active root can be the running client's fallback root,
+              // which need not be one of the configured installs — derive
+              // its state straight from the ledger + realm rule.
+              entryClientStateOf(entry, target, recordOfEntryOn(entry, target.path));
+            return state === "notInstalled" || state === "needsUpdate";
+          })
+        : scope === "this"
+          ? []
+          : syncTargets.value;
+    // The all-clients button names a ROLLOUT, so an empty target set means
+    // there is nothing left to do — a refresh may have made every client
+    // current between the render and the click. Returning HERE (before the
+    // disclaimer, the fan-out busy marker and the single-root branch) keeps
+    // that stale click from REINSTALLING the active root, the opposite of
+    // the button's ask. Other scopes never get here with an empty set
+    // ("this" installs the active root; "auto" falls back to the single-root
+    // path).
+    if (scope === "all" && targets.length === 0) return;
+    // A fan-out runs when the op spans several roots — and ALWAYS when
+    // "all" picked exactly one NON-active client: the single-root branch
+    // writes the ACTIVE root, which is not what the user asked for.
+    const fanOut =
+      scope === "all"
+        ? targets.length > 1 ||
+          (targets.length === 1 && !sameGamePath(targets[0].path, gameRoot.value))
+        : targets.length > 1;
+    // A collapsed all-clients rollout (the lone ACTIVE root is the only
+    // target) takes the single-root branch, where the fan-out's per-target
+    // running skip does not exist — keep the localized game-running gate
+    // instead of surfacing the backend's raw refusal sentence.
+    if (scope === "all" && !fanOut && clientRunning(gameRoot.value)) {
+      toast.error(t("resources.gameRunningBlock"));
       return;
     }
     if (!(await requestModOpDisclaimer())) return;
@@ -803,14 +879,10 @@ export function useModHub() {
     // is a REGISTRATION — the backend cuts the foreign installer's
     // manifest rows, the follow-up toast says ownership moved.
     const tookOverForeign = !!foreignCopyOf(entry);
-    // Multi-client fan-out (unified sync on, several installs): every
-    // target client realm-filtered, ONE summary toast. Single-client
-    // machines and individual-management mode keep today's per-op toast.
-    const fanOut = syncTargets.value.length > 1;
     if (fanOut) fanOutBusy.value.set(entry.id, "install");
     try {
       if (fanOut) {
-        await fanOutMod(entry, "install", preset);
+        await fanOutMod(entry, "install", preset, targets);
         if (tookOverForeign) {
           toast.info(
             t("resources.registeredOverForeign", {
@@ -850,6 +922,16 @@ export function useModHub() {
       progresses.value.delete(entry.id);
     }
   }
+
+  /** The catalog pane's explicit per-client actions (the partial-state
+   *  footer): "this client" installs the active root only, "everywhere"
+   *  finishes the rollout on the applicable clients still missing the
+   *  current version. Both ignore the header sync toggle — the button the
+   *  user pressed names its scope. */
+  const installModThisClient = (entry: CatalogEntry, preset?: string) =>
+    installMod(entry, preset, "this");
+  const installModEverywhere = (entry: CatalogEntry, preset?: string) =>
+    installMod(entry, preset, "all");
 
   async function uninstallMod() {
     const entry = confirmTarget.value;
@@ -2254,6 +2336,8 @@ export function useModHub() {
     clientLabelOf: syncLabelOf,
     unitKey,
     installMod,
+    installModThisClient,
+    installModEverywhere,
     uninstallMod,
     toggleUnit,
     uninstallUnit,

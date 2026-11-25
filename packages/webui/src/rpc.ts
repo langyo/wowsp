@@ -285,6 +285,12 @@ export const RPC = {
   mod_hub_layer_set_enabled: "mod_hub_layer_set_enabled",
   mod_hub_layer_render: "mod_hub_layer_render",
   mod_hub_layer_paths: "mod_hub_layer_paths",
+  // A layer's preview payload straight from its store (managed layers keep
+  // the authoritative copy under <data>/mods/layers/<pack>/<version>/files) —
+  // the detail pane previews a layer whether or not it has been rendered.
+  mod_hub_layer_list_assets: "mod_hub_layer_list_assets",
+  mod_hub_layer_read_asset: "mod_hub_layer_read_asset",
+  mod_hub_layer_asset_file_path: "mod_hub_layer_asset_file_path",
 
   wallpaper_list: "wallpaper_list",
   wallpaper_import: "wallpaper_import",

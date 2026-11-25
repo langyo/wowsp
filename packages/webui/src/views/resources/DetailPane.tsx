@@ -36,10 +36,12 @@ import AppTag from "@/components/base/AppTag";
 import ErrorCard from "@/components/base/ErrorCard";
 import { KIND_META, catIcon, isCatalogCat } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
+import { installScopePlan } from "@/features/modhub/installScope";
 import { applicableRealms, serverScopeOf } from "@/features/modhub/servers";
 import type { UnitRelation } from "@/features/modhub/unitRelations";
 import AssetPreview from "@/features/modhub/AssetPreview";
 import CatalogPreviewMedia from "@/features/modhub/CatalogPreview";
+import { sameGamePath } from "@/utils/gamePath";
 import { openExternal } from "@/utils/openExternal";
 import { mediaImageUrl } from "@/utils/media";
 import { t } from "@/i18n";
@@ -195,6 +197,40 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
   const busyInstall = busyState === "install" || busyState === "update";
   const busyUninstall = busyState === "uninstall";
   const progressEntry = ctx.progresses.value.get(entry.id);
+  // The install ACTION SCOPE: the footer offers ONE toggle-dependent
+  // button by default, and TWO explicit actions (全客户端 / 本客户端) only
+  // in the partial state — the entry already on some detected clients but
+  // missing (or stale) on others. A lone 安装 loses its meaning there
+  // (user report 2026-11-25), so both scopes are spelled out.
+  const clientStatuses = ctx.entryClientStatuses(entry);
+  const plan = installScopePlan(clientStatuses, ctx.gameRoot.value);
+  // The active client's status drives the per-client hint; absent when the
+  // active root is the running client's fallback folder (not a configured
+  // install), where the hint is simply omitted.
+  const thisClientInstall =
+    clientStatuses.find((s) => sameGamePath(s.install.path, ctx.gameRoot.value))
+      ?.install ?? null;
+  // The scheme the install actions apply (the first scheme is the default).
+  const installPreset = entry.presets?.length
+    ? ctx.selectedPreset.value || entry.presets[0].id
+    : undefined;
+  // The preset DRIFT (the selected scheme differs from the installed one)
+  // applies to BOTH scopes: the all-clients action writes the same switched
+  // scheme, so it shares the warning voice, and the this-client action's
+  // label becomes save-&-reinstall instead of the plain scope wording.
+  const presetDrifted = presetSwitched(entry, record, ctx.activePreset(entry));
+  // The partial-state pair of labels, resolved in the render body: the
+  // per-scope button texts are plan output, so a stray re-render cannot
+  // desync them from the plan that decided to show the buttons at all.
+  const allScopeLabel =
+    plan.showAllClients && plan.allLabel !== null ? t(plan.allLabel) : null;
+  const thisScopeLabel = plan.showAllClients
+    ? busyInstall
+      ? t("resources.installingMod")
+      : presetDrifted
+        ? t("resources.presetApplyReinstall")
+        : t(plan.thisLabel)
+    : null;
   const url = discussionUrl(entry.discussion);
   const kb = catalogKb(entry);
   const CatIcon = catIcon(entry.category);
@@ -432,29 +468,69 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
              * same-id record and reinstalls over it, so this is also
              * the escape hatch for any residue that badges an entry
              * installed after its files are gone. */}
-            {!entry.bundled && (
+            {!entry.bundled && plan.showAllClients && plan.allLabel !== null && (
+              <>
+                {/* PARTIAL state: the entry sits on some detected clients
+                 *  but not (or not current) on others, so the two scopes
+                 *  are named outright instead of hiding one behind the
+                 *  header's 多客户端同步 switch. ALL-CLIENTS finishes the
+                 *  rollout: the fan-out skips the clients already on the
+                 *  current version (the hint carries the remaining count). */}
+                <HkButton
+                  size="sm"
+                  variant="secondary"
+                  class={presetDrifted ? "mod-detail__action-warn" : undefined}
+                  data-hint={
+                    plan.allLabel === "resources.updateAllClients"
+                      ? // Update-only rollout: the hint must talk about the
+                        // STALE clients, not "where the mod is missing".
+                        t("resources.updateAllClientsHint", {
+                          count: plan.stale,
+                        })
+                      : t("resources.installAllClientsHint", {
+                          count: plan.missing + plan.stale,
+                        })
+                  }
+                  disabled={!!busyState || !ctx.gameRoot.value}
+                  onClick={() => ctx.installModEverywhere(entry, installPreset)}
+                >
+                  {allScopeLabel}
+                </HkButton>
+                {/* THIS CLIENT: the active root alone — a plain install
+                 *  when it lacks the entry, an update when its record is
+                 *  stale, a reinstall when it is already current (same
+                 *  escape-hatch role the single button always had). */}
+                <HkButton
+                  size="sm"
+                  variant="primary"
+                  class={presetDrifted ? "mod-detail__action-warn" : undefined}
+                  data-hint={
+                    thisClientInstall
+                      ? t("resources.installThisClientHint", {
+                          client: ctx.clientLabelOf(thisClientInstall),
+                        })
+                      : undefined
+                  }
+                  disabled={!!busyState || !ctx.gameRoot.value}
+                  loading={busyInstall}
+                  onClick={() => ctx.installModThisClient(entry, installPreset)}
+                >
+                  {thisScopeLabel}
+                </HkButton>
+              </>
+            )}
+            {!entry.bundled && !plan.showAllClients && (
               <HkButton
                 size="sm"
                 variant="primary"
-                class={
-                  presetSwitched(entry, record, ctx.activePreset(entry))
-                    ? "mod-detail__action-warn"
-                    : undefined
-                }
+                class={presetDrifted ? "mod-detail__action-warn" : undefined}
                 disabled={!!busyState || !ctx.gameRoot.value}
                 loading={busyInstall}
-                onClick={() =>
-                  ctx.installMod(
-                    entry,
-                    entry.presets?.length
-                      ? ctx.selectedPreset.value || entry.presets[0].id
-                      : undefined,
-                  )
-                }
+                onClick={() => ctx.installMod(entry, installPreset)}
               >
                 {busyInstall
                   ? t("resources.installingMod")
-                  : presetSwitched(entry, record, ctx.activePreset(entry))
+                  : presetDrifted
                     ? t("resources.presetApplyReinstall")
                     : record
                     ? upToDate

@@ -476,6 +476,18 @@ touches another install's records. Snapshot dirs no record references
 anymore are garbage-collected after a 24h grace window, so a just-
 failed install's snapshots survive a retry.
 
+**Per-client install scopes.** With several detected clients, the catalog
+entry's footer states its scope instead of leaving it implicit. Whenever
+some applicable clients already carry the entry (current, or on an older
+version) while others still lack it, the single install button splits into **Install on all clients**
+— which fans out to exactly the applicable clients that still lack the
+current version, skipping the already-current ones — and **Install /
+Update / Reinstall on this client**, which only touches the active root
+regardless of the "Multi-client sync" toggle. When every applicable
+client already has the entry, the footer keeps one Reinstall button whose
+fan-out still follows the toggle, so the explicit choices never change
+the meaning of the plain action.
+
 All mutations (catalog install/uninstall, unit toggle/uninstall, and the
 overlay stub's install/uninstall) serialize through an async gate so
 parallel catalog installs can download simultaneously without interleaving
@@ -934,7 +946,8 @@ install: index 0 is the top, the highest priority.
 - **UI**: the texture and voice categories merge into one **Beautify**
   category, and the installed list becomes a draggable layer swimlane
   (hikari `HkDraggableList`, top = highest priority). The detail pane shows
-  the priority position, `covered_by` / `shadowed` counts, slots and the
+  the priority position, `covered_by` / `shadowed` counts, slots, a
+  category-appropriate payload preview (see "Layer previews") and the
   actions (top / up / down / bottom / disable / uninstall / update), plus a
   render report of blocked and conflicting paths.
 
@@ -945,13 +958,37 @@ and main_low.webm (720p) under `gui/video/login/`, VP9 + Vorbis at 25 fps;
 a pack may ship either tier or both. The stock files stay inside the
 game's pkg VFS and `res_mods` shadows them by path — no `idx`/VFS write
 is involved, and removing the pack's files restores the stock clip. The
-layer pane lists installed videos through `mod_hub_list_assets`
-(`kind: "video"`) and plays them inline: `mod_hub_asset_file_path`
-resolves the file to an absolute path for Tauri's asset protocol, so the
-bytes stream to the player and never cross IPC. Exactly ONE tier plays
-(hikari's media player): `main.webm` first, then the first non-`_low`
-clip, then the first by name; the remaining tiers list as compact
-name + size rows instead of a second player.
+layer pane lists the pack's clips from the layer store (see "Layer
+previews"; legacy unmanaged layers still fall back to the rendered tree)
+and plays them inline: the store path resolves through
+`mod_hub_layer_asset_file_path` to an absolute path granted to Tauri's
+asset protocol, so the bytes stream to the player and never cross IPC.
+Exactly ONE tier plays (hikari's media player): `main.webm` first, then
+the first non-`_low` clip, then the first by name; the remaining tiers
+list as compact name + size rows instead of a second player.
+
+### Layer previews
+
+The layer detail pane previews a managed pack's payload **from the layer
+store, not from the rendered game tree**, so a pack shows what it holds
+even while the stack is unrendered or the layer is disabled. Three
+store-scoped commands mirror the installed-unit asset commands:
+`mod_hub_layer_list_assets` lists the payload (the same classification
+and `mod.xml` voice-scene metadata `mod_hub_list_assets` produces),
+`mod_hub_layer_read_asset` serves one decoded image thumbnail or audio
+payload, and `mod_hub_layer_asset_file_path` resolves a clip to an
+absolute path for the asset protocol (the store sits under `%APPDATA%`,
+outside the static scope, so the single file is granted per request).
+Every command requires the layer's store manifest, so a guessed pack id
+or version cannot read an arbitrary directory. The pane picks its section
+from the layer's category: a video pack keeps the login-clip section and
+the one-primary-player rule above, a voice/audio pack lists scene-titled
+rows that play through the shared audio player, and every other material
+pack renders a lazy thumbnail grid of the images it ships. 3D `.geometry`
+meshes are not expanded for store payloads — the model stage stays an
+installed-unit preview — and unmanaged legacy layers keep the
+rendered-tree video fallback until they are reinstalled into the
+store-backed stack.
 
 ## Custom import (自定义导入安装)
 

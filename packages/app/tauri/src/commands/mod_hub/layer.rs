@@ -47,6 +47,7 @@ use wowsp_tauri_shared::{
 use crate::commands::game_context::same_folder;
 use crate::commands::mod_catalog::ledger::{Ledger, load_ledger};
 
+use super::assets::{self, AssetFileInfo, AssetPayload};
 use super::latest_bin_version;
 
 // ── constants ───────────────────────────────────────────────────────────────
@@ -294,6 +295,42 @@ fn read_manifest(data: &Path, pack_id: &str, version: &str) -> Option<LayerManif
             None
         },
     }
+}
+
+/// Resolve the payload directory of a STORE-MANAGED layer version: a
+/// manifest for this exact pack/version must exist ([`read_manifest`] rejects
+/// one naming another pack; the version is checked here, against the manifest
+/// it returns), and its `files` directory must be there. Anything else — an
+/// unknown pack, a version the manifest does not describe, a legacy install
+/// whose payload only lives in the ledger + the live res_mods tree — is an
+/// error: there is no authoritative store copy to preview.
+pub(crate) fn layer_store_files_in(
+    data: &Path,
+    pack_id: &str,
+    version: &str,
+) -> anyhow::Result<PathBuf> {
+    match read_manifest(data, pack_id, version) {
+        Some(manifest) if manifest.version == version => {},
+        Some(manifest) => {
+            return Err(anyhow!(
+                "layer {pack_id}@{version}: store manifest names version {} — the layer is not store-managed",
+                manifest.version
+            ));
+        },
+        None => {
+            return Err(anyhow!(
+                "layer {pack_id}@{version}: no store manifest — the layer is not store-managed"
+            ));
+        },
+    }
+    let files = layer_files_dir(data, pack_id, version);
+    if !files.is_dir() {
+        return Err(anyhow!(
+            "layer {pack_id}@{version}: store payload missing at {}",
+            files.display()
+        ));
+    }
+    Ok(files)
 }
 
 fn load_state(data: &Path) -> LayerState {
@@ -1429,6 +1466,64 @@ pub async fn mod_hub_layer_paths(game_root: String) -> CommandResult<Vec<LayerPa
     Ok(path_report(&data, &ledger, &game_root)?)
 }
 
+// ── store payload preview ───────────────────────────────────────────────────
+
+/// List a managed layer's previewable files straight from the app-data layer
+/// store.
+///
+/// Unlike [`assets::mod_hub_list_assets`] (which reads the GAME's rendered
+/// res_mods tree), this reads the authoritative store copy, so a layer that
+/// is disabled, not yet rendered or shadowed by a higher layer still
+/// previews. Rels are layer-relative — they index the store payload directly.
+#[tauri::command]
+pub fn mod_hub_layer_list_assets(
+    pack_id: String,
+    version: String,
+) -> CommandResult<Vec<AssetFileInfo>> {
+    let data = crate::paths::ensure_data_dir()?;
+    let files = layer_store_files_in(&data, &pack_id, &version)?;
+    Ok(assets::list_assets_under(&files, &files))
+}
+
+/// Serve one managed layer asset from the store as a browser-ready payload
+/// (images/audio only — video goes through the asset protocol below).
+#[tauri::command]
+pub fn mod_hub_layer_read_asset(
+    pack_id: String,
+    version: String,
+    rel_path: String,
+) -> CommandResult<AssetPayload> {
+    let data = crate::paths::ensure_data_dir()?;
+    let files = layer_store_files_in(&data, &pack_id, &version)?;
+    let path = assets::resolve_contained_file(&files, &rel_path, "the layer store")?;
+    Ok(assets::read_asset_at(&path, &rel_path)?)
+}
+
+/// One managed layer asset's absolute path — what the webview hands to
+/// Tauri's asset protocol (`convertFileSrc`). Video previews use this instead
+/// of a data URL: a login clip is tens of MB and must never cross IPC. The
+/// file is also granted to the protocol scope here, because the layer store
+/// lives under `%APPDATA%` (or a portable `data/`), outside the static
+/// `$LOCALDATA/WoWSP` scope in `tauri.conf.json`.
+#[tauri::command]
+pub fn mod_hub_layer_asset_file_path(
+    app: tauri::AppHandle,
+    pack_id: String,
+    version: String,
+    rel_path: String,
+) -> CommandResult<String> {
+    let data = crate::paths::ensure_data_dir()?;
+    let files = layer_store_files_in(&data, &pack_id, &version)?;
+    let path = assets::resolve_contained_file(&files, &rel_path, "the layer store")?;
+    // Grant just this file: widening the scope to the whole store would
+    // expose every layer's payload to the webview.
+    use tauri::Manager;
+    if let Err(e) = app.asset_protocol_scope().allow_file(&path) {
+        return Err(anyhow!("grant asset protocol access to {rel_path}: {e}").into());
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// Hook: an install just committed its record. Adopt the payload into the
 /// layer store and put the new layer on top. Best effort only.
 pub(crate) fn adopt_install(game_root: &str, record: &ModInstallRecord) {
@@ -1542,6 +1637,27 @@ mod tests {
             snapshot_hashes: None,
             shared_roots: Vec::new(),
         }
+    }
+
+    /// Write a store-managed layer the way [`adopt_install_in`] does: the
+    /// layer.json manifest plus the payload directory (no game tree involved —
+    /// the store is the authoritative copy the preview reads).
+    fn store_layer(data: &Path, pack_id: &str, version: &str, files: Vec<String>) {
+        let dir = layer_files_dir(data, pack_id, version);
+        fs::create_dir_all(&dir).expect("create store payload dir");
+        let manifest = LayerManifest {
+            schema: SCHEMA,
+            pack_id: pack_id.to_string(),
+            name: "Voice Pack".to_string(),
+            version: version.to_string(),
+            category: "voice".to_string(),
+            layer_class: LayerClass::Additive,
+            slots: Vec::new(),
+            files,
+            installed_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string_pretty(&manifest).expect("serialize manifest");
+        fs::write(manifest_path(data, pack_id, version), json).expect("write manifest");
     }
 
     fn stack_ids(stack: &LayerStack) -> Vec<&str> {
@@ -1859,5 +1975,149 @@ mod tests {
             stack.slot_conflicts[0].pack_ids,
             vec!["voice-b".to_string(), "voice-a".to_string()]
         );
+    }
+
+    /// A managed layer previews from the data store alone: the manifest gate
+    /// finds the payload directory, and the listing is layer-relative with
+    /// kinds + voice metadata attached — no rendered game tree involved.
+    #[test]
+    fn layer_store_payload_previews_without_a_game_tree() {
+        let tmp = fixture("store_preview");
+        let data = tmp.join("data");
+        fs::create_dir_all(&data).unwrap();
+        let files = layer_files_dir(&data, "pack.voice", "1.0.0");
+        fs::create_dir_all(files.join("banks/mods/Bank")).unwrap();
+        fs::create_dir_all(files.join("gui/video/login")).unwrap();
+        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([200, 10, 10, 255]));
+        image::DynamicImage::ImageRgba8(img)
+            .save(files.join("pic.png"))
+            .unwrap();
+        fs::write(files.join("gui/video/login/main.webm"), b"webm").unwrap();
+        fs::write(files.join("banks/mods/Bank/a.wem"), b"wem").unwrap();
+        fs::write(
+            files.join("banks/mods/Bank/mod.xml"),
+            concat!(
+                "<AudioModification.xml><ExternalEvent>",
+                "<Name>Play_VO_Autopilot</Name><Container><Path><StateList><State>",
+                "<Value>VO_Autopilot_Checkpoint</Value></State></StateList>",
+                "<FilesList><File><Name>a.wem</Name></File></FilesList></Path>",
+                "</Container></ExternalEvent></AudioModification.xml>",
+            ),
+        )
+        .unwrap();
+        store_layer(
+            &data,
+            "pack.voice",
+            "1.0.0",
+            vec![
+                "pic.png".to_string(),
+                "gui/video/login/main.webm".to_string(),
+                "banks/mods/Bank/a.wem".to_string(),
+                "banks/mods/Bank/mod.xml".to_string(),
+            ],
+        );
+
+        let store = layer_store_files_in(&data, "pack.voice", "1.0.0").expect("store payload");
+        assert_eq!(store, files);
+
+        let list = super::assets::list_assets_under(&store, &store);
+        let kinds: Vec<(&str, &str)> = list
+            .iter()
+            .map(|file| (file.rel.as_str(), file.kind.as_str()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("banks/mods/Bank/a.wem", "audio"),
+                ("gui/video/login/main.webm", "video"),
+                ("pic.png", "image"),
+            ]
+        );
+        let wem = list.iter().find(|file| file.ext == "wem").unwrap();
+        assert_eq!(wem.scene_event.as_deref(), Some("Play_VO_Autopilot"));
+
+        // The store read path: a contained rel serves the image, an escaping
+        // one is refused.
+        let png = super::assets::resolve_contained_file(&store, "pic.png", "the layer store")
+            .expect("contained png");
+        assert!(
+            super::assets::read_asset_at(&png, "pic.png")
+                .expect("png payload")
+                .data_url
+                .starts_with("data:image/png;base64,")
+        );
+        assert!(
+            super::assets::resolve_contained_file(&store, "../layer.json", "the layer store")
+                .is_err()
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The store gate: a layer with no manifest is not previewable (unknown
+    /// pack, or a payload directory only), a manifest with no payload is
+    /// refused too, and a manifest naming another pack never unlocks the
+    /// directory it sits in.
+    #[test]
+    fn layer_store_files_requires_a_matching_manifest() {
+        let tmp = fixture("store_gate");
+        let data = tmp.join("data");
+        fs::create_dir_all(&data).unwrap();
+
+        let err = layer_store_files_in(&data, "pack.unknown", "1.0.0").unwrap_err();
+        assert!(err.to_string().contains("not store-managed"), "{err}");
+
+        // Payload without a manifest: a legacy install's payload lives in the
+        // live res_mods tree, not in the store.
+        let orphan = layer_files_dir(&data, "pack.orphan", "1.0.0");
+        fs::create_dir_all(&orphan).unwrap();
+        fs::write(orphan.join("pic.png"), b"png").unwrap();
+        let err = layer_store_files_in(&data, "pack.orphan", "1.0.0").unwrap_err();
+        assert!(err.to_string().contains("not store-managed"), "{err}");
+
+        // Manifest but no payload directory: refused with the missing path.
+        store_layer(&data, "pack.empty", "1.0.0", Vec::new());
+        fs::remove_dir_all(layer_files_dir(&data, "pack.empty", "1.0.0")).unwrap();
+        let err = layer_store_files_in(&data, "pack.empty", "1.0.0").unwrap_err();
+        assert!(err.to_string().contains("payload missing"), "{err}");
+
+        // A manifest that names another pack does not unlock this directory.
+        fs::create_dir_all(layer_files_dir(&data, "pack.mismatch", "1.0.0")).unwrap();
+        fs::write(
+            manifest_path(&data, "pack.mismatch", "1.0.0"),
+            concat!(
+                r#"{"schema":1,"packId":"pack.other","name":"Other","version":"1.0.0","#,
+                r#""category":"skin","layerClass":"override","slots":[],"files":[],"#,
+                r#""installedAt":""}"#,
+            ),
+        )
+        .unwrap();
+        let err = layer_store_files_in(&data, "pack.mismatch", "1.0.0").unwrap_err();
+        assert!(err.to_string().contains("not store-managed"), "{err}");
+
+        // A manifest for another VERSION does not unlock the directory
+        // either, even when the pack id matches: the requested payload is not
+        // the one the manifest describes.
+        store_layer(&data, "pack.version", "2.0.0", vec!["pic.png".to_string()]);
+        let stale = LayerManifest {
+            schema: SCHEMA,
+            pack_id: "pack.version".to_string(),
+            name: "Old".to_string(),
+            version: "1.0.0".to_string(),
+            category: "voice".to_string(),
+            layer_class: LayerClass::Additive,
+            slots: Vec::new(),
+            files: vec!["pic.png".to_string()],
+            installed_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+        fs::write(
+            manifest_path(&data, "pack.version", "2.0.0"),
+            serde_json::to_string_pretty(&stale).unwrap(),
+        )
+        .unwrap();
+        let err = layer_store_files_in(&data, "pack.version", "2.0.0").unwrap_err();
+        assert!(err.to_string().contains("not store-managed"), "{err}");
+        assert!(err.to_string().contains("1.0.0"), "{err}");
+
+        fs::remove_dir_all(&tmp).ok();
     }
 }

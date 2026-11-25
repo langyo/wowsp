@@ -32,7 +32,10 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
   /** Payload fetch (the .wem decode round-trip) in flight — the card
    *  shows an indeterminate bar while this is true. */
   const loading = ref(false);
-  /** res_mods-relative path of the current track ("" = nothing loaded). */
+  /** Track KEY of the current track ("" = nothing loaded): an installed
+   *  unit's res_mods-relative path, or a namespaced `layer:<pack>@<version>/<rel>`
+   *  for a managed layer's store payload (layer-relative paths collide across
+   *  packs, so the key carries the pack identity). */
   const rel = ref("");
   /** Display name (file name) of the current track. */
   const title = ref("");
@@ -129,7 +132,7 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
   }
 
   /**
-   * Ask for a track. The same track toggles pause/resume; a new track
+   * Ask for a track. The same track KEY toggles pause/resume; a new track
    * swaps immediately (the loader callback supplies its data URL — for
    * .wem that is the decode round-trip) and starts from zero. A
    * superseding request wins: stale loaders are discarded on both the

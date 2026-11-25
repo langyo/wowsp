@@ -296,6 +296,75 @@ export default defineComponent({
   },
 });
 
+/** The layer pane's preview section. Managed layers read their app-data
+ *  store through AssetPreview's "layer" source: the payload previews before
+ *  the stack is rendered and while the layer is disabled, and covers files
+ *  the game tree only carries after a render (voice/texture payloads).
+ *  The layer category picks the body — the login-clip player, the voice
+ *  line list, or the texture thumbnail grid. Legacy layers (managed=false)
+ *  have no store payload yet, so they keep today's rendered-tree video
+ *  fallback; the pane already explains the reinstall that would change it. */
+function renderLayerPreview(ctx: ResourcesCtx, layer: ModLayer) {
+  if (!layer.managed) {
+    const videoDir = videoPreviewDir(layer);
+    if (!videoDir || !ctx.gameRoot.value) return null;
+    return (
+      <div class="layer-detail__preview">
+        <span class="layer-detail__label">{t("resources.layers.videoTitle")}</span>
+        <p class="mod-detail__hint">{t("resources.layers.videoHint")}</p>
+        <AssetPreview
+          source="installed"
+          gameRoot={ctx.gameRoot.value}
+          relPath={videoDir}
+          mode="video"
+          silentEmpty
+        />
+      </div>
+    );
+  }
+  // The store-backed body: the pack's own files, never the rendered tree.
+  // A store that yields nothing for this mode explains itself through
+  // emptyNoteKey instead of leaving the title + hint above nothing.
+  const storePreview = (mode: "video" | "audio" | "image") => (
+    <AssetPreview
+      source="layer"
+      layerPackId={layer.packId}
+      layerVersion={layer.version}
+      mode={mode}
+      silentEmpty
+      emptyNoteKey="resources.layers.previewEmpty"
+    />
+  );
+  if (layer.category === "video" || layer.videoDir) {
+    return (
+      <div class="layer-detail__preview">
+        <span class="layer-detail__label">{t("resources.layers.videoTitle")}</span>
+        <p class="mod-detail__hint">{t("resources.layers.videoHint")}</p>
+        {storePreview("video")}
+      </div>
+    );
+  }
+  if (layer.category === "voice" || layer.category === "audio") {
+    return (
+      <div class="layer-detail__preview">
+        <span class="layer-detail__label">{t("resources.layers.audioTitle")}</span>
+        <p class="mod-detail__hint">{t("resources.layers.audioHint")}</p>
+        {storePreview("audio")}
+      </div>
+    );
+  }
+  // Everything else is a material/UI payload: thumbnails are the one
+  // preview that fits a skin, a texture set, a GUI reskin or a catalog
+  // category alike.
+  return (
+    <div class="layer-detail__preview">
+      <span class="layer-detail__label">{t("resources.layers.textureTitle")}</span>
+      <p class="mod-detail__hint">{t("resources.layers.textureHint")}</p>
+      {storePreview("image")}
+    </div>
+  );
+}
+
 /** The layer detail pane: priority position, covering/shadowing state,
  *  slots and every layer action. Mounted by DetailPane for the "layer"
  *  selection mode. */
@@ -321,9 +390,6 @@ export function renderLayerDetail(ctx: ResourcesCtx, packId: string) {
   const conflicts = conflictsOfLayer(layer, ls.conflicts.value);
   const paired = ctx.pairedCatalogOfLayer(layer);
   const canUninstall = ctx.canUninstallLayer(layer);
-  // Video packs shadow the client's login/opening clip; the section lists
-  // the installed tree's video files and plays them inline.
-  const videoDir = videoPreviewDir(layer);
   const busy = ls.busy.value;
   const glyph = glyphOf(layer.category);
   const Icon = glyph.icon;
@@ -397,20 +463,7 @@ export function renderLayerDetail(ctx: ResourcesCtx, packId: string) {
             <span>{t("resources.layers.fileCount", { count: layer.fileCount })}</span>
           </div>
 
-          {videoDir && ctx.gameRoot.value && (
-            <div class="layer-detail__video">
-              <span class="layer-detail__label">
-                {t("resources.layers.videoTitle")}
-              </span>
-              <p class="mod-detail__hint">{t("resources.layers.videoHint")}</p>
-              <AssetPreview
-                gameRoot={ctx.gameRoot.value}
-                relPath={videoDir}
-                mode="video"
-                silentEmpty
-              />
-            </div>
-          )}
+          {renderLayerPreview(ctx, layer)}
 
           <div class="layer-detail__slot-block">
             <span class="layer-detail__label">{t("resources.layers.slotsLabel")}</span>

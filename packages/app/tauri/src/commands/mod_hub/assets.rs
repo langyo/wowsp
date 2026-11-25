@@ -116,28 +116,32 @@ fn classify_ext(ext: &str) -> Option<(&'static str, bool)> {
     }
 }
 
-/// List an installed unit's previewable files (images and audio under one
-/// res_mods-relative path — a directory or a single file). Depth-limited
-/// walk; capped so a pathological tree cannot flood the UI.
-#[tauri::command]
-pub fn mod_hub_list_assets(
-    game_root: String,
-    rel_path: String,
-) -> CommandResult<Vec<AssetFileInfo>> {
-    let res_mods = super::scan_installed::scan_root(&game_root)?;
-    safe_rel(&rel_path)?;
-    let root = res_mods.join(&rel_path);
-    if !root.exists() {
-        return Ok(Vec::new());
-    }
+/// Walk `root` and collect every previewable file, reporting each `rel`
+/// relative to `rel_base` (forward slashes). The game command passes a
+/// directory under `res_mods` and keeps today's res_mods-relative
+/// spellings; the layer preview passes the store's `files` directory as
+/// both, so a managed layer's rels index its own payload.
+///
+/// The walk is depth-limited per branch: the root is depth 0 and files under
+/// up to eight nested directories are listed, while a deep branch cannot
+/// exhaust the budget of a sibling branch the way a shared directory count
+/// would. It is also capped at 400 files and 512 visited directories so a
+/// pathological tree cannot flood the UI or block the command thread.
+pub(crate) fn list_assets_under(root: &Path, rel_base: &Path) -> Vec<AssetFileInfo> {
     let mut out = Vec::new();
-    let mut stack = vec![root.clone()];
-    let mut depth_left = 8usize;
-    while let Some(dir) = stack.pop() {
-        depth_left = depth_left.saturating_sub(1);
-        if depth_left == 0 || out.len() >= 400 {
+    if !root.exists() {
+        return out;
+    }
+    // (directory, depth): each branch carries its own depth. The directory
+    // budget bounds trees that are wide and shallow but carry few previewable
+    // files — the per-branch depth limit alone would walk all of them.
+    let mut stack = vec![(root.to_path_buf(), 0u8)];
+    let mut dirs_left = 512usize;
+    while let Some((dir, depth)) = stack.pop() {
+        if out.len() >= 400 || dirs_left == 0 {
             break;
         }
+        dirs_left -= 1;
         let Ok(entries) = fs::read_dir(&dir) else {
             continue;
         };
@@ -151,7 +155,11 @@ pub fn mod_hub_list_assets(
         for ent in entries.flatten() {
             let path = ent.path();
             if path.is_dir() {
-                stack.push(path);
+                // A directory at depth 8 is still read (its files are depth
+                // 8); its children would be depth 9 and are dropped.
+                if depth < 8 {
+                    stack.push((path, depth + 1));
+                }
                 continue;
             }
             let file_name = ent.file_name().to_string_lossy().into_owned();
@@ -172,7 +180,7 @@ pub fn mod_hub_list_assets(
             {
                 continue;
             }
-            let Ok(rel) = path.strip_prefix(&res_mods) else {
+            let Ok(rel) = path.strip_prefix(rel_base) else {
                 continue;
             };
             let scene = if ext == AUDIO_WEM {
@@ -193,7 +201,19 @@ pub fn mod_hub_list_assets(
         }
     }
     out.sort_by(|a, b| a.rel.cmp(&b.rel));
-    Ok(out)
+    out
+}
+
+/// List an installed unit's previewable files (images and audio under one
+/// res_mods-relative path — a directory or a single file).
+#[tauri::command]
+pub fn mod_hub_list_assets(
+    game_root: String,
+    rel_path: String,
+) -> CommandResult<Vec<AssetFileInfo>> {
+    let res_mods = super::scan_installed::scan_root(&game_root)?;
+    safe_rel(&rel_path)?;
+    Ok(list_assets_under(&res_mods.join(&rel_path), &res_mods))
 }
 
 /// Normalize + validate a res_mods-relative path coming from the webview.
@@ -221,26 +241,36 @@ pub(crate) fn normalize_asset_rel(rel_path: &str) -> anyhow::Result<PathBuf> {
     Ok(rel)
 }
 
-/// Resolve one asset under the live build's `res_mods` (the command body,
-/// split out so tests drive it without a Tauri app handle). The file must
-/// exist, and canonicalized containment keeps a link inside `res_mods` from
-/// serving a file elsewhere on disk.
-pub(crate) fn resolve_asset_file_path(game_root: &str, rel_path: &str) -> anyhow::Result<PathBuf> {
-    let res_mods = super::super::game_context::res_mods_dir(Path::new(game_root))?;
+/// Resolve one asset file under `root` (the command body, split out so
+/// tests drive it without a Tauri app handle). The file must exist, and
+/// canonicalized containment keeps a link inside `root` from serving a file
+/// elsewhere on disk. `label` names the root in errors (`res_mods`, or the
+/// layer store the preview reads from).
+pub(crate) fn resolve_contained_file(
+    root: &Path,
+    rel_path: &str,
+    label: &str,
+) -> anyhow::Result<PathBuf> {
     let rel = normalize_asset_rel(rel_path)?;
-    let path = res_mods.join(&rel);
+    let path = root.join(&rel);
     let meta = fs::metadata(&path).map_err(|e| anyhow!("{rel_path}: {e}"))?;
     if !meta.is_file() {
         return Err(anyhow!("{rel_path}: not a file"));
     }
-    // Canonical containment: a junction or symlink under res_mods must not
-    // hand the webview a file from outside the game tree.
-    let root = fs::canonicalize(&res_mods).map_err(|e| anyhow!("res_mods: {e}"))?;
+    // Canonical containment: a junction or symlink under the root must not
+    // hand the webview a file from outside it.
+    let canonical_root = fs::canonicalize(root).map_err(|e| anyhow!("{label}: {e}"))?;
     let target = fs::canonicalize(&path).map_err(|e| anyhow!("{rel_path}: {e}"))?;
-    if !target.starts_with(&root) {
-        return Err(anyhow!("{rel_path}: escapes res_mods"));
+    if !target.starts_with(&canonical_root) {
+        return Err(anyhow!("{rel_path}: escapes {label}"));
     }
     Ok(path)
+}
+
+/// Resolve one asset under the live build's `res_mods`.
+pub(crate) fn resolve_asset_file_path(game_root: &str, rel_path: &str) -> anyhow::Result<PathBuf> {
+    let res_mods = super::super::game_context::res_mods_dir(Path::new(game_root))?;
+    resolve_contained_file(&res_mods, rel_path, "res_mods")
 }
 
 /// One installed asset's absolute path — what the webview hands to Tauri's
@@ -268,49 +298,45 @@ pub fn mod_hub_asset_file_path(
     Ok(path.to_string_lossy().into_owned())
 }
 
-/// Serve one asset: images decode + thumbnail to a PNG data URL; native
-/// audio streams as a data URL in its own mime. `.wem` and decode failures
-/// are errors the UI renders in place.
-#[tauri::command]
-pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> CommandResult<AssetPayload> {
-    let res_mods = super::scan_installed::scan_root(&game_root)?;
-    safe_rel(&rel_path)?;
-    let path = res_mods.join(&rel_path);
+/// Serve one already-resolved asset file (`rel` only labels errors — the
+/// caller did the path resolution): images decode + thumbnail to a PNG data
+/// URL; native audio streams as a data URL in its own mime. `.wem` and
+/// decode failures are errors the UI renders in place.
+pub(crate) fn read_asset_at(path: &Path, rel: &str) -> anyhow::Result<AssetPayload> {
     let ext = path
         .extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase())
         .unwrap_or_default();
 
     if classify_ext(&ext).is_none() {
-        return Err(anyhow!("{rel_path}: not a previewable asset").into());
+        return Err(anyhow!("{rel}: not a previewable asset"));
     }
     if is_video_ext(&ext) {
         // A video is streamed through the asset protocol — base64'ing tens
         // of MB through IPC would stall the pane.
-        return Err(anyhow!("{rel_path}: video previews use mod_hub_asset_file_path").into());
+        return Err(anyhow!("{rel}: video previews use mod_hub_asset_file_path"));
     }
     if ext == "geometry" {
         // Listed for the 3D stage, but its payload is GLB parts from a
         // different command — bail before reading a multi-MB mesh nobody
         // will serve from here.
-        return Err(anyhow!("{rel_path}: .geometry previews use mod_hub_read_model").into());
+        return Err(anyhow!("{rel}: .geometry previews use mod_hub_read_model"));
     }
     // Audit M-11: check the size BEFORE the read — a multi-GB file renamed
     // to .png must not be slurped whole into memory (fs::read has no cap
     // of its own; the abort on failure to allocate is not catchable).
     const PREVIEW_MAX_BYTES: u64 = 64 * 1024 * 1024;
-    let len = fs::metadata(&path)
+    let len = fs::metadata(path)
         .map(|m| m.len())
-        .map_err(|e| anyhow!("stat {rel_path}: {e}"))?;
+        .map_err(|e| anyhow!("stat {rel}: {e}"))?;
     if len > PREVIEW_MAX_BYTES {
         return Err(anyhow!(
-            "{rel_path}: {} bytes exceeds the {} MB preview cap",
+            "{rel}: {} bytes exceeds the {} MB preview cap",
             len,
             PREVIEW_MAX_BYTES / (1024 * 1024)
-        )
-        .into());
+        ));
     }
-    let bytes = fs::read(&path).map_err(|e| anyhow!("read {rel_path}: {e}"))?;
+    let bytes = fs::read(path).map_err(|e| anyhow!("read {rel}: {e}"))?;
 
     if ext == AUDIO_WEM {
         // On-demand transcode, routed by what the file actually is:
@@ -328,7 +354,7 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> CommandResult<
                 ),
             });
         }
-        let wav = transcode_wem(&bytes).map_err(|e| anyhow!("{rel_path}: {e}"))?;
+        let wav = transcode_wem(&bytes).map_err(|e| anyhow!("{rel}: {e}"))?;
         return Ok(AssetPayload {
             data_url: format!(
                 "data:audio/wav;base64,{}",
@@ -353,21 +379,29 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> CommandResult<
         "bmp" => image::ImageFormat::Bmp,
         "tga" => image::ImageFormat::Tga,
         "dds" => image::ImageFormat::Dds,
-        _ => return Err(anyhow!("{rel_path}: unsupported image format .{ext}").into()),
+        _ => return Err(anyhow!("{rel}: unsupported image format .{ext}")),
     };
     let decoded = image::load_from_memory_with_format(&bytes, format)
-        .map_err(|e| anyhow!("{rel_path}: decode failed: {e}"))?;
+        .map_err(|e| anyhow!("{rel}: decode failed: {e}"))?;
     let thumb = decoded.thumbnail(THUMB_EDGE, THUMB_EDGE);
     let mut png = std::io::Cursor::new(Vec::new());
     thumb
         .write_to(&mut png, image::ImageFormat::Png)
-        .map_err(|e| anyhow!("{rel_path}: re-encode failed: {e}"))?;
+        .map_err(|e| anyhow!("{rel}: re-encode failed: {e}"))?;
     Ok(AssetPayload {
         data_url: format!(
             "data:image/png;base64,{}",
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png.get_ref())
         ),
     })
+}
+
+/// Serve one installed asset as a browser-ready payload.
+#[tauri::command]
+pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> CommandResult<AssetPayload> {
+    let res_mods = super::scan_installed::scan_root(&game_root)?;
+    safe_rel(&rel_path)?;
+    Ok(read_asset_at(&res_mods.join(&rel_path), &rel_path)?)
 }
 
 /// File name → (event, state, 1-based variation index) parsed from a
@@ -888,6 +922,185 @@ mod tests {
 
         let err = mod_hub_read_asset(root, "gui/video/login/main.webm".into()).unwrap_err();
         assert!(err.to_string().contains("mod_hub_asset_file_path"), "{err}");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The extracted store walk: rels are relative to the walk base (the
+    /// layer preview passes its `files` directory as both), while
+    /// classification and voice-scene metadata match the game-tree listing.
+    #[test]
+    fn list_assets_under_reports_base_relative_rels() {
+        let tmp = std::env::temp_dir().join("wowsp_assets_under");
+        let _ = fs::remove_dir_all(&tmp);
+        let root = tmp.join("files");
+        fs::create_dir_all(root.join("banks/mods/Bank")).unwrap();
+        fs::create_dir_all(root.join("gui/video/login")).unwrap();
+        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([0, 128, 255, 255]));
+        image::DynamicImage::ImageRgba8(img)
+            .save(root.join("pic.png"))
+            .unwrap();
+        fs::write(root.join("gui/video/login/main.webm"), b"webm").unwrap();
+        fs::write(root.join("banks/mods/Bank/a.wem"), b"wem").unwrap();
+        fs::write(
+            root.join("banks/mods/Bank/mod.xml"),
+            concat!(
+                "<AudioModification.xml><ExternalEvent>",
+                "<Name>Play_VO_Autopilot</Name><Container><Path><StateList><State>",
+                "<Value>VO_Autopilot_Checkpoint</Value></State></StateList>",
+                "<FilesList><File><Name>a.wem</Name></File></FilesList></Path>",
+                "</Container></ExternalEvent></AudioModification.xml>",
+            ),
+        )
+        .unwrap();
+        // A file outside the walk base must never leak into the listing.
+        fs::write(tmp.join("outside.png"), b"png").unwrap();
+
+        let list = list_assets_under(&root, &root);
+        let rels: Vec<&str> = list.iter().map(|file| file.rel.as_str()).collect();
+        assert_eq!(
+            rels,
+            [
+                "banks/mods/Bank/a.wem",
+                "gui/video/login/main.webm",
+                "pic.png"
+            ],
+            "sorted, layer-relative, no walk-base prefix"
+        );
+        let image = list.iter().find(|file| file.ext == "png").unwrap();
+        assert_eq!(image.kind, "image");
+        let video = list.iter().find(|file| file.ext == "webm").unwrap();
+        assert_eq!(video.kind, "video");
+        let wem = list.iter().find(|file| file.ext == "wem").unwrap();
+        assert_eq!(wem.kind, "audio");
+        assert_eq!(wem.scene_event.as_deref(), Some("Play_VO_Autopilot"));
+        assert_eq!(wem.scene_state.as_deref(), Some("VO_Autopilot_Checkpoint"));
+        assert_eq!(wem.scene_index, Some(1));
+
+        // A missing root lists nothing instead of failing.
+        assert!(list_assets_under(&tmp.join("nope"), &root).is_empty());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The walk budget is per branch, not a shared directory count: a deep
+    /// branch must not exhaust it for a sibling branch. Depth 8 (root = 0)
+    /// is still listed; depth 9 is out.
+    #[test]
+    fn walk_depth_is_per_branch_and_caps_at_eight() {
+        let tmp = std::env::temp_dir().join("wowsp_assets_depth");
+        let _ = fs::remove_dir_all(&tmp);
+        let root = tmp.join("files");
+        // Two branches whose combined directory count exceeds the old shared
+        // budget of seven directories — the old walk truncated one of them.
+        let deep = root.join("a1/a2/a3/a4/a5/a6/a7");
+        fs::create_dir_all(&deep).unwrap();
+        fs::write(deep.join("pic.png"), b"png").unwrap();
+        let shallow = root.join("b1/b2");
+        fs::create_dir_all(&shallow).unwrap();
+        fs::write(shallow.join("pic2.png"), b"png").unwrap();
+        // Eight nested directories are reachable; the ninth level is not.
+        let at_eight = root.join("d1/d2/d3/d4/d5/d6/d7/d8");
+        fs::create_dir_all(&at_eight).unwrap();
+        fs::write(at_eight.join("depth8.png"), b"png").unwrap();
+        let at_nine = at_eight.join("d9");
+        fs::create_dir_all(&at_nine).unwrap();
+        fs::write(at_nine.join("depth9.png"), b"png").unwrap();
+
+        let list = list_assets_under(&root, &root);
+        let rels: Vec<&str> = list.iter().map(|file| file.rel.as_str()).collect();
+        assert!(rels.contains(&"a1/a2/a3/a4/a5/a6/a7/pic.png"), "{rels:?}");
+        assert!(rels.contains(&"b1/b2/pic2.png"), "{rels:?}");
+        assert!(
+            rels.contains(&"d1/d2/d3/d4/d5/d6/d7/d8/depth8.png"),
+            "depth 8 is listed: {rels:?}"
+        );
+        assert!(
+            !rels.contains(&"d1/d2/d3/d4/d5/d6/d7/d8/d9/depth9.png"),
+            "depth 9 is not listed: {rels:?}"
+        );
+        assert_eq!(list.len(), 3, "only the three reachable files: {rels:?}");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The payload body without a game root: a synthesized PNG becomes a PNG
+    /// data URL, and a video extension is refused with the protocol hint
+    /// before any bytes cross IPC.
+    #[test]
+    fn read_asset_at_serves_images_and_refuses_video() {
+        let tmp = std::env::temp_dir().join("wowsp_assets_read_at");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let png = tmp.join("pic.png");
+        let img = image::RgbaImage::from_pixel(3, 2, image::Rgba([10, 20, 30, 255]));
+        image::DynamicImage::ImageRgba8(img).save(&png).unwrap();
+        let payload = read_asset_at(&png, "pic.png").expect("png payload");
+        assert!(payload.data_url.starts_with("data:image/png;base64,"));
+
+        // A native audio extension ships its bytes in the matching mime.
+        let ogg = tmp.join("line.ogg");
+        fs::write(&ogg, b"ogg").unwrap();
+        assert!(
+            read_asset_at(&ogg, "line.ogg")
+                .expect("ogg payload")
+                .data_url
+                .starts_with("data:audio/ogg;base64,")
+        );
+
+        let video = tmp.join("main.webm");
+        fs::write(&video, b"webm").unwrap();
+        let err = read_asset_at(&video, "main.webm").unwrap_err();
+        assert!(err.to_string().contains("mod_hub_asset_file_path"), "{err}");
+
+        let geometry = tmp.join("Hull.geometry");
+        fs::write(&geometry, b"geo").unwrap();
+        let err = read_asset_at(&geometry, "Hull.geometry").unwrap_err();
+        assert!(err.to_string().contains("mod_hub_read_model"), "{err}");
+
+        let txt = tmp.join("readme.txt");
+        fs::write(&txt, b"noise").unwrap();
+        assert!(read_asset_at(&txt, "readme.txt").is_err());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The shared file resolver: a store file resolves under the store, and
+    /// traversal spellings, a missing file or a directory in file position
+    /// are all refused before anything is served.
+    #[test]
+    fn contained_resolver_keeps_files_inside_the_store() {
+        let tmp = std::env::temp_dir().join("wowsp_assets_contained");
+        let _ = fs::remove_dir_all(&tmp);
+        let store = tmp.join("store");
+        fs::create_dir_all(store.join("gui/video/login")).unwrap();
+        fs::write(store.join("gui/video/login/main.webm"), b"webm").unwrap();
+        fs::write(tmp.join("escape.webm"), b"escape").unwrap();
+
+        let fwd = resolve_contained_file(&store, "gui/video/login/main.webm", "the layer store")
+            .expect("store file");
+        assert_eq!(fwd, store.join("gui/video/login/main.webm"));
+        let back =
+            resolve_contained_file(&store, "gui\\video\\login\\main.webm", "the layer store")
+                .expect("backslash spelling");
+        assert_eq!(back, fwd);
+
+        for rel in [
+            "../escape.webm",
+            "gui/../../escape.webm",
+            "gui\\..\\..\\escape.webm",
+            "/gui/video/login/main.webm",
+            "C:/gui/video/login/main.webm",
+            "@game/gui/video/login/main.webm",
+            "",
+        ] {
+            assert!(
+                resolve_contained_file(&store, rel, "the layer store").is_err(),
+                "{rel:?} must be rejected"
+            );
+        }
+        // Missing file, and a directory where a file is required.
+        assert!(
+            resolve_contained_file(&store, "gui/video/login/main_low.webm", "the layer store")
+                .is_err()
+        );
+        assert!(resolve_contained_file(&store, "gui/video/login", "the layer store").is_err());
         fs::remove_dir_all(&tmp).ok();
     }
 }

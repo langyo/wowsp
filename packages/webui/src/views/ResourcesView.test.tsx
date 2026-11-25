@@ -22,6 +22,13 @@ const mocks = vi.hoisted(() => ({
   catalogInstall: vi.fn(), catalogUninstall: vi.fn(),
   parkSkip: vi.fn(),
   syncOn: true,
+  /* Running game processes (the multi-instance report). Empty by default;
+     the per-client scope tests seed one to prove a running ACTIVE client no
+     longer aborts an all-clients rollout. */
+  gameProcesses: [] as {
+    running: boolean;
+    matchedInstall?: { kind?: string; realm?: string | null; path: string } | null;
+  }[],
   /* The viewport composable's answer: one narrow test flips this to mount the
      component's window form (the phone sheet) instead of the two-pane one. */
   mobile: false,
@@ -50,7 +57,10 @@ vi.mock("@/api", () => ({ api: {
 } }));
 vi.mock("@/stores/config", () => ({ useConfigStore: () => mocks.config }));
 vi.mock("@/stores/gameStatus", () => ({
-  useGameStatusStore: () => ({ process: { running: false }, processes: [] }),
+  useGameStatusStore: () => ({
+    process: { running: false },
+    processes: mocks.gameProcesses,
+  }),
 }));
 /* The pluginUpdates mock routes the shared run entry points onto the
  * mocked api commands, so fan-out assertions observe the per-root RPCs
@@ -250,6 +260,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.syncOn = true;
   mocks.mobile = false;
+  mocks.gameProcesses = [];
   mocks.config = reactive({ activeInstall: { path: "C:/TestGameA" }, installs: [] });
   mocks.scan.mockResolvedValue([mod("Mod A")]);
   mocks.foreign.mockResolvedValue([]);
@@ -1714,5 +1725,341 @@ describe("phone sheet (the component's narrow form)", () => {
     await flushPromises();
     expect(host.props("detailOpen")).toBe(true);
     view.unmount();
+  });
+});
+
+/** The catalog detail footer's install ACTION SCOPE: in the PARTIAL state
+ *  (the entry sits on some detected clients while others lack it or run a
+ *  stale version) the pane names BOTH scopes instead of leaving one hidden
+ *  behind the header's 多客户端同步 switch; every other state keeps the
+ *  single button. The mocked t echoes keys, so label assertions read the
+ *  plan's vocabulary straight off the spy. */
+describe("catalog install scope buttons", () => {
+  const catEntry = (servers?: string[]) => ({
+    id: "mod-x", version: "1", category: "battle", nameEn: "mod-x", game: "*",
+    title: "mod-x", nameZh: "", description: "",
+    authors: [], packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+    i18n: {}, aliases: [], servers,
+  });
+  /** One ledger record on a root; version "1" = the entry's current one. */
+  const recordOn = (gameRoot: string, version = "1") => ({
+    id: "mod-x", name: "Mod X", version, category: "battle", source: "mod-hub",
+    discussion: null, binVersion: "1", installedAt: "2026-11-02T00:00:00Z",
+    files: [], gameRoot,
+  });
+  /** Active = the EU steam client; the CN(360) client is the second one. */
+  const twoClients = () => {
+    mocks.config.activeInstall = { kind: "steam", realm: "eu", path: "C:/EU" };
+    mocks.config.installs = [
+      { kind: "steam", realm: "eu", path: "C:/EU" },
+      { kind: "cn360", realm: "cn", path: "C:/CN" },
+    ];
+  };
+  async function mountPane(servers?: string[]) {
+    mocks.catalog.mockResolvedValue({
+      mods: [catEntry(servers)], sourceVersion: "test", fetchedAt: "",
+    });
+    const view = shallowMount(ResourcesView, {
+      global: {
+        stubs: { HkMasterDetail: false, HkScrollContainer: false, LoadingNote: false, AppTag: false, HkTag: false },
+      },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    return view;
+  }
+  /** The footer action carrying one data-hint key (the t mock echoes keys,
+   *  so the hint doubles as the button's test id). */
+  const hintedButton = (view: VueWrapper, hint: string) =>
+    view
+      .findAllComponents({ name: "HkButton" })
+      .find((b) => (b.vm.$attrs as Record<string, unknown>)["data-hint"] === hint);
+  /** Every clickable pane action (the mocked HkButton renders no DOM, so
+   *  the footer buttons are read off their attrs). */
+  const paneActions = (view: VueWrapper) =>
+    view
+      .findAllComponents({ name: "HkButton" })
+      .filter(
+        (b) =>
+          typeof (b.vm.$attrs as Record<string, unknown>).onClick === "function",
+      );
+  async function click(btn: VueWrapper) {
+    (btn.vm.$attrs as { onClick: () => void }).onClick();
+    await flushPromises();
+  }
+
+  beforeEach(() => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+  });
+
+  it("splits the partial state into all-clients + this-client actions", async () => {
+    twoClients();
+    // Installed and CURRENT on the CN client, missing on the active EU one.
+    mocks.records.mockResolvedValue([recordOn("C:/CN")]);
+    const view = await mountPane();
+    expect(hintedButton(view, "resources.installAllClientsHint")).toBeTruthy();
+    expect(hintedButton(view, "resources.installThisClientHint")).toBeTruthy();
+    // Exactly two pane actions — no third single-button variant leaks in.
+    expect(paneActions(view)).toHaveLength(2);
+    // Labels come from the plan: something missing → install-everywhere;
+    // the active client has no record → install-here. Both keys are
+    // asserted through the t spy (the parsed plan's vocabulary).
+    expect(vi.mocked(t)).toHaveBeenCalledWith("resources.installAllClients");
+    expect(vi.mocked(t)).toHaveBeenCalledWith("resources.installThisClient");
+    // Hints carry the rollout count and the active client's label.
+    expect(vi.mocked(t)).toHaveBeenCalledWith("resources.installAllClientsHint", {
+      count: 1,
+    });
+    expect(vi.mocked(t)).toHaveBeenCalledWith(
+      "resources.installThisClientHint",
+      expect.objectContaining({ client: expect.stringContaining("EU") }),
+    );
+  });
+
+  it("installs only the missing ACTIVE root from the all-clients action", async () => {
+    twoClients();
+    mocks.records.mockResolvedValue([recordOn("C:/CN")]);
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    const view = await mountPane();
+    await click(hintedButton(view, "resources.installAllClientsHint")!);
+    // The CN client already runs the current version → it is skipped; the
+    // active EU root is the one target, so the plain single-root RPC runs.
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
+    expect(mocks.catalogInstall.mock.calls[0][1]).toBe("C:/EU");
+    expect(mocks.catalogInstall.mock.calls.map((c) => c[1])).not.toContain("C:/CN");
+  });
+
+  it("installs only the OTHER missing root from the all-clients action", async () => {
+    twoClients();
+    // Active EU is current, the CN client lacks the entry entirely.
+    mocks.records.mockResolvedValue([recordOn("C:/EU")]);
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    const view = await mountPane();
+    await click(hintedButton(view, "resources.installAllClientsHint")!);
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
+    // Fan-out gates are requested for a non-active target (skip + package
+    // skip), and the summary toast is the fan-out's.
+    expect(mocks.catalogInstall).toHaveBeenCalledWith(
+      "mod-x", "C:/CN", undefined, true, true,
+    );
+    expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
+  });
+
+  it("installs ONLY the active root from the this-client action", async () => {
+    twoClients();
+    mocks.records.mockResolvedValue([recordOn("C:/CN")]);
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    const view = await mountPane();
+    await click(hintedButton(view, "resources.installThisClientHint")!);
+    // The explicit this-client button bypasses the fan-out entirely: one
+    // plain install on the active root, whatever sits on the other clients.
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith(
+      "mod-x", "C:/EU", undefined, undefined, undefined,
+    );
+  });
+
+  it("offers both scopes with the sync toggle OFF (not toggle-gated)", async () => {
+    // The whole point of the explicit buttons: the header switch must not
+    // decide whether the user can see/choose the client scope.
+    mocks.syncOn = false;
+    twoClients();
+    mocks.records.mockResolvedValue([recordOn("C:/CN")]);
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    const view = await mountPane();
+    expect(paneActions(view)).toHaveLength(2);
+    await click(hintedButton(view, "resources.installAllClientsHint")!);
+    // Still rolls out to the missing applicable client (the active EU root).
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
+    expect(mocks.catalogInstall.mock.calls[0][1]).toBe("C:/EU");
+  });
+
+  it("names the rollout UPDATE when only versions are stale", async () => {
+    twoClients();
+    // Both clients carry a record; the CN one is on the older version.
+    mocks.records.mockResolvedValue([recordOn("C:/EU"), recordOn("C:/CN", "0")]);
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    const view = await mountPane();
+    // missing == 0 → the all-clients action is an update; the active root is
+    // current → its action is a reinstall.
+    expect(vi.mocked(t)).toHaveBeenCalledWith("resources.updateAllClients");
+    expect(vi.mocked(t)).toHaveBeenCalledWith("resources.reinstallThisClient");
+    // The update-only rollout speaks the UPDATE hint (stale count), not the
+    // install hint whose sentence asks where the mod is missing.
+    expect(vi.mocked(t)).toHaveBeenCalledWith("resources.updateAllClientsHint", {
+      count: 1,
+    });
+    expect(vi.mocked(t)).not.toHaveBeenCalledWith(
+      "resources.installAllClientsHint",
+      expect.anything(),
+    );
+    // In the UPDATE state the all-clients action carries the update hint —
+    // the hint is the button's test id (the t mock echoes keys).
+    await click(hintedButton(view, "resources.updateAllClientsHint")!);
+    // Only the stale CN client is rolled forward.
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
+    expect(mocks.catalogInstall.mock.calls[0][1]).toBe("C:/CN");
+  });
+
+  it("keeps the single button when every client already runs the current version", async () => {
+    twoClients();
+    mocks.records.mockResolvedValue([recordOn("C:/EU"), recordOn("C:/CN")]);
+    const view = await mountPane();
+    expect(paneActions(view)).toHaveLength(1);
+    expect(hintedButton(view, "resources.installAllClientsHint")).toBeUndefined();
+    expect(hintedButton(view, "resources.installThisClientHint")).toBeUndefined();
+    expect(vi.mocked(t)).not.toHaveBeenCalledWith("resources.installAllClients");
+    expect(vi.mocked(t)).not.toHaveBeenCalledWith("resources.installThisClient");
+    // Today's single-button shape: one primary action with no scope hint.
+    expect(paneActions(view)[0].vm.$attrs).toMatchObject({ variant: "primary" });
+    expect((paneActions(view)[0].vm.$attrs as Record<string, unknown>)["data-hint"]).toBeUndefined();
+  });
+
+  it("keeps the single install button on a single-client machine", async () => {
+    mocks.config.activeInstall = { kind: "steam", realm: "eu", path: "C:/EU" };
+    mocks.config.installs = [{ kind: "steam", realm: "eu", path: "C:/EU" }];
+    mocks.records.mockResolvedValue([]);
+    const view = await mountPane();
+    expect(paneActions(view)).toHaveLength(1);
+    // No scope split on a single-client machine — the lone install button
+    // keeps its today's-label chain (its slot text is not evaluated by the
+    // stubbed HkButton, so absence of the scope keys is the contract here).
+    expect(vi.mocked(t)).not.toHaveBeenCalledWith("resources.installThisClient");
+    expect(vi.mocked(t)).not.toHaveBeenCalledWith("resources.installAllClients");
+  });
+
+  it("does nothing when a ledger refresh made every client current before the click", async () => {
+    twoClients();
+    // Partial at render time: the CN client is current, the active EU one
+    // is missing.
+    mocks.records.mockResolvedValue([recordOn("C:/CN")]);
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    const view = await mountPane();
+    // Hold the all-clients action while the pane still shows the partial
+    // state, then let a concurrent install land on the active root: its
+    // post-install ledger reload makes BOTH clients current.
+    const allClick = (
+      hintedButton(view, "resources.installAllClientsHint")!.vm.$attrs as {
+        onClick: () => void;
+      }
+    ).onClick;
+    mocks.records.mockResolvedValue([recordOn("C:/EU"), recordOn("C:/CN")]);
+    await click(hintedButton(view, "resources.installThisClientHint")!);
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
+    mocks.catalogInstall.mockClear();
+    // The stale all-clients action has nothing left to roll out: it must
+    // NOT fall through to the single-root branch and reinstall the (now
+    // current) active root — the opposite of what the button asked.
+    allClick();
+    await flushPromises();
+    expect(mocks.catalogInstall).not.toHaveBeenCalled();
+  });
+
+  it("rolls out to the other client while the active client is running", async () => {
+    twoClients();
+    // Active EU is current AND running; the CN client is the missing one.
+    mocks.records.mockResolvedValue([recordOn("C:/EU")]);
+    mocks.gameProcesses = [
+      { running: true, matchedInstall: { kind: "steam", realm: "eu", path: "C:/EU" } },
+    ];
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    const view = await mountPane();
+    await click(hintedButton(view, "resources.installAllClientsHint")!);
+    // The active-root running gate no longer aborts the rollout: the fan-out
+    // serves the idle CN client and never writes the running one.
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith(
+      "mod-x", "C:/CN", undefined, true, true,
+    );
+    expect(mocks.catalogInstall.mock.calls.map((c) => c[1])).not.toContain("C:/EU");
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("never fans the all-clients action out to a realm-unsupported client", async () => {
+    // Entry exclusive to eu+cn: the Lesta (ru) client is unsupported, so the
+    // rollout filter must never hand it an install RPC (the same realm rule
+    // the sync fan-out skips by).
+    mocks.config.activeInstall = { kind: "steam", realm: "eu", path: "C:/EU" };
+    mocks.config.installs = [
+      { kind: "steam", realm: "eu", path: "C:/EU" },
+      { kind: "cn360", realm: "cn", path: "C:/CN" },
+      { kind: "lesta", path: "C:/RU" },
+    ];
+    mocks.records.mockResolvedValue([recordOn("C:/EU")]);
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    const view = await mountPane(["eu", "cn"]);
+    await click(hintedButton(view, "resources.installAllClientsHint")!);
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith(
+      "mod-x", "C:/CN", undefined, true, true,
+    );
+    expect(mocks.catalogInstall.mock.calls.map((c) => c[1])).not.toContain("C:/RU");
+  });
+
+  it("speaks the save-&-reinstall voice on BOTH scope buttons when the scheme drifted", async () => {
+    twoClients();
+    // The active EU client carries the record on the INSTALLED scheme; the
+    // pane's scheme switch then moves away from it → preset drift.
+    mocks.catalog.mockResolvedValue({
+      mods: [
+        {
+          ...catEntry(),
+          presets: [
+            { id: "classic", nameZh: "经典", nameEn: "Classic", packages: [] },
+            { id: "sasagcy", nameZh: "Sasagcy", nameEn: "Sasagcy", packages: [] },
+          ],
+        },
+      ],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    mocks.records.mockResolvedValue([{ ...recordOn("C:/EU"), preset: "sasagcy" }]);
+    const view = shallowMount(ResourcesView, {
+      global: {
+        stubs: { HkMasterDetail: false, HkScrollContainer: false, LoadingNote: false, AppTag: false, HkTag: false },
+      },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    // The scheme tabs start on the installed scheme; switching drifts.
+    const presetTabs = view
+      .findAllComponents({ name: "HkTabs" })
+      .find((c) =>
+        (c.props("tabs") as { key: string }[] | undefined)?.some(
+          (tab) => tab.key === "sasagcy",
+        ),
+      )!;
+    expect(presetTabs.props("modelValue")).toBe("sasagcy");
+    presetTabs.vm.$emit("update:modelValue", "classic");
+    await flushPromises();
+    // The this-client label names the drift action, and BOTH scopes carry
+    // the warning class (the all-clients action writes that same scheme).
+    expect(vi.mocked(t)).toHaveBeenCalledWith("resources.presetApplyReinstall");
+    const warnClass = (hint: string) =>
+      (hintedButton(view, hint)!.vm.$attrs as Record<string, unknown>).class;
+    expect(warnClass("resources.installAllClientsHint")).toContain(
+      "mod-detail__action-warn",
+    );
+    expect(warnClass("resources.installThisClientHint")).toContain(
+      "mod-detail__action-warn",
+    );
   });
 });
