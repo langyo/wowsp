@@ -355,6 +355,17 @@ AFDIAN_USER_ID = "174593ccd13211e8831352540025c377"
 # 官方节点的 mesh 角色显式声明（默认 community；官方部署必须 official）。
 NODE_ROLE = "official"
 
+# 2026-11-25 KV quota incident (emergency, reversible): the v0.6.11 client
+# routes every stats lookup through /api/lookup/fetch, and each cold miss
+# costs two KV reads (one of them the never-written `peers:upstream` row);
+# the empty peer registry also keeps the client autodiscover loop alive,
+# writing one KV counter per /api/peers edge miss every ten minutes per
+# client. By 09:40Z on 2026-11-25 that had spent 55,029 KV reads (55% of
+# the daily free tier) and 510 writes (51%). Flip this switch back off once
+# the client-side caching/backoff fix ships (or the mesh moves off this
+# worker).
+LOOKUP_ENABLED = "0"
+
 # 每日 19:33 UTC（北京 03:33）拉一次爱发电赞助者/订单——刷新
 # /api/sponsors 的 KV 文档（src/sponsors.rs；变更才写，免费版 KV
 # 1000 写/天绰绰有余）。
