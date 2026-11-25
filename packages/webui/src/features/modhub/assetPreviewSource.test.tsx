@@ -2,6 +2,9 @@
  *  layer's app-data store (list / read / absolute-path RPCs), while
  *  "installed" keeps reading the rendered res_mods tree; the store has no
  *  model-preview command, so meshes are dropped from a layer listing. The
+ *  "catalog" source reads a staged entry's preview cache (list / read with
+ *  the entry id), and — having neither an absolute-path nor a model-preview
+ *  command — drops video AND model files from its listings. The
  *  suite also pins the cross-store invariants: the audio player's track key
  *  is namespaced per layer (bare layer rels collide across packs), a
  *  listing/read that settles after a switch is discarded, layer switches
@@ -19,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   layerList: vi.fn(),
   layerRead: vi.fn(),
   layerPath: vi.fn(),
+  catList: vi.fn(),
+  catRead: vi.fn(),
   play: vi.fn(),
   playedDataUrl: "",
 }));
@@ -31,6 +36,8 @@ vi.mock("@/api", () => ({
     modHubLayerListAssets: mocks.layerList,
     modHubLayerReadAsset: mocks.layerRead,
     modHubLayerAssetFilePath: mocks.layerPath,
+    modCatalogListAssets: mocks.catList,
+    modCatalogReadAsset: mocks.catRead,
     modHubReadModel: vi.fn(),
   },
 }));
@@ -527,5 +534,199 @@ describe("AssetPreview installed source", () => {
     await flushPromises();
     expect(wrapper.findAll(".asset-preview__tile")).toHaveLength(1);
     expect(wrapper.findAll(".asset-preview__model-row")).toHaveLength(1);
+  });
+});
+
+describe("AssetPreview catalog source", () => {
+  it("lists and reads a staged entry through the catalog commands", async () => {
+    mocks.catList.mockResolvedValue([
+      {
+        rel: "gui/tex.dds",
+        size: 10,
+        kind: "image",
+        ext: "dds",
+        playable: false,
+      },
+    ]);
+    mocks.catRead.mockResolvedValue({ dataUrl: "data:image/png;base64,CCC" });
+    const wrapper = mount(AssetPreview, {
+      props: {
+        source: "catalog",
+        catalogModId: "mod-x",
+        mode: "image",
+        silentEmpty: true,
+      },
+    });
+    await flushPromises();
+    // The active scheme rides BOTH calls: the backend gates list and read
+    // on the staged marker's preset (empty = the entry's default scheme).
+    expect(mocks.catList).toHaveBeenCalledWith("mod-x", "");
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.layerList).not.toHaveBeenCalled();
+    expect(mocks.catRead).toHaveBeenCalledWith("mod-x", "", "gui/tex.dds");
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.layerRead).not.toHaveBeenCalled();
+    expect(wrapper.find(".asset-preview__tile img").attributes("src")).toBe(
+      "data:image/png;base64,CCC",
+    );
+  });
+
+  it("drops model files from a catalog listing", async () => {
+    // The staged cache has no model-preview command: a mesh row could
+    // never expand, so the texture section keeps only the thumbnails.
+    mocks.catList.mockResolvedValue([
+      {
+        rel: "content/ship.geometry",
+        size: 10,
+        kind: "model",
+        ext: "geometry",
+        playable: false,
+      },
+      {
+        rel: "gui/tex.dds",
+        size: 10,
+        kind: "image",
+        ext: "dds",
+        playable: false,
+      },
+    ]);
+    mocks.catRead.mockResolvedValue({ dataUrl: "data:image/png;base64,CCC" });
+    const wrapper = mount(AssetPreview, {
+      props: {
+        source: "catalog",
+        catalogModId: "mod-x",
+        mode: "texture",
+        silentEmpty: true,
+      },
+    });
+    await flushPromises();
+    expect(wrapper.findAll(".asset-preview__tile")).toHaveLength(1);
+    expect(wrapper.find(".asset-preview__model").exists()).toBe(false);
+  });
+
+  it("never resolves a video player for a catalog listing", async () => {
+    // No absolute-path command exists for the staged cache, so video is
+    // dropped from the usable set and no player ever mounts (let alone
+    // streams) — the mode explains its emptiness instead.
+    mocks.catList.mockResolvedValue([video("gui/video/login/main.webm")]);
+    const wrapper = mount(AssetPreview, {
+      props: {
+        source: "catalog",
+        catalogModId: "mod-x",
+        mode: "video",
+        // NOT silentEmpty: the dropped video set explains itself through
+        // the standard empty note (asserted below).
+      },
+    });
+    await flushPromises();
+    expect(
+      wrapper.findComponent({ name: "HkMediaPlayer" }).exists(),
+    ).toBe(false);
+    expect(mocks.path).not.toHaveBeenCalled();
+    expect(mocks.layerPath).not.toHaveBeenCalled();
+    expect(wrapper.find(".asset-preview__note").text()).toBe(
+      "resources.noAssets",
+    );
+  });
+
+  it("reloads when the staged entry id changes", async () => {
+    mocks.catList.mockResolvedValue([]);
+    const wrapper = mount(AssetPreview, {
+      props: {
+        source: "catalog",
+        catalogModId: "mod-a",
+        mode: "image",
+        silentEmpty: true,
+      },
+    });
+    await flushPromises();
+    expect(mocks.catList).toHaveBeenCalledTimes(1);
+    await wrapper.setProps({ catalogModId: "mod-b" });
+    await flushPromises();
+    expect(mocks.catList).toHaveBeenCalledTimes(2);
+    expect(mocks.catList).toHaveBeenLastCalledWith("mod-b", "");
+  });
+
+  it("re-lists and re-reads with the asked-for scheme", async () => {
+    // The backend answers per staged scheme: the entry's active preset
+    // rides the listing AND every read, and a scheme switch reloads. A
+    // FRESH array per call, like the backend — the eager thumbnail
+    // watcher re-runs on the new listing reference.
+    mocks.catList.mockImplementation(async () => [
+      {
+        rel: "gui/tex.dds",
+        size: 10,
+        kind: "image",
+        ext: "dds",
+        playable: false,
+      },
+    ]);
+    mocks.catRead.mockResolvedValue({ dataUrl: "data:image/png;base64,EEE" });
+    const wrapper = mount(AssetPreview, {
+      props: {
+        source: "catalog",
+        catalogModId: "mod-x",
+        catalogPreset: "classic",
+        mode: "image",
+        silentEmpty: true,
+      },
+    });
+    await flushPromises();
+    expect(mocks.catList).toHaveBeenCalledWith("mod-x", "classic");
+    expect(mocks.catRead).toHaveBeenCalledWith("mod-x", "classic", "gui/tex.dds");
+    await wrapper.setProps({ catalogPreset: "alt" });
+    await flushPromises();
+    // A scheme switch is a reload (a different staged marker answers).
+    expect(mocks.catList).toHaveBeenCalledTimes(2);
+    expect(mocks.catList).toHaveBeenLastCalledWith("mod-x", "alt");
+    expect(mocks.catRead).toHaveBeenLastCalledWith("mod-x", "alt", "gui/tex.dds");
+  });
+
+  it("namespaces a catalog voice line's player key per entry + scheme", async () => {
+    // Staged rels are cache-relative: two entries (and one entry's two
+    // schemes) ship the same bank paths, so the track key is namespaced
+    // per entry — with the scheme when one is active — like the layer
+    // source's per-pack key.
+    mocks.catList.mockResolvedValue([
+      {
+        rel: "banks/mods/Shared/line.wem",
+        size: 10,
+        kind: "audio",
+        ext: "wem",
+        playable: true,
+      },
+    ]);
+    mocks.catRead.mockResolvedValue({ dataUrl: "data:audio/wav;base64,DD" });
+    mocks.play.mockImplementation(
+      async (
+        _key: string,
+        _name: string,
+        loader: () => Promise<string>,
+      ) => {
+        await loader();
+      },
+    );
+    const wrapper = mount(AssetPreview, {
+      props: {
+        source: "catalog",
+        catalogModId: "voice-x",
+        catalogPreset: "classic",
+        mode: "audio",
+        silentEmpty: true,
+      },
+    });
+    await flushPromises();
+    await wrapper.find(".asset-preview__audio-btn").trigger("click");
+    await flushPromises();
+    expect(mocks.play.mock.calls[0][0]).toBe(
+      "catalog:voice-x@classic/banks/mods/Shared/line.wem",
+    );
+    expect(mocks.catRead).toHaveBeenCalledWith(
+      "voice-x",
+      "classic",
+      "banks/mods/Shared/line.wem",
+    );
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.layerRead).not.toHaveBeenCalled();
   });
 });

@@ -134,6 +134,25 @@ Aslain 整合包的清单行 ID 与落盘目录名。索引器将其采集进
 raw 链接。索引器只保留 https 且托管于上述 GitHub 主机的链接，并以
 `preview_video` 写入版本载荷；应用用 hikari 播放器在点击播放按钮后加载。
 
+播放门面只在封面上保留播放按钮（无封面时渲染深色底 + 单独一个按钮——媒体
+下方的格式行已写明标准），播放器卡片沿用与已安装 / 分层详情页一致的
+asset-preview 样式。
+
+#### 载荷预览（目录条目暂存）
+
+`skin`、`ui`、`voice`、`audio`、`model` 类目的条目还会在详情页预览真实载荷，
+复用与已安装 / 分层详情页相同的 AssetPreview 设施——不再另起炉灶。暂存是
+显式的：面板给出带体积的下载按钮，压缩包走与安装一致的镜像阶梯 + 内容寻址
+缓存（进度走 `preview:<id>` 总线），随后按安装自身的先包优先合并（重复目标
+保留首个包的副本，差异副本丢弃并记录，跳过无用文件）提取到每条目缓存目录
+`<cache>/mod-preview/<id>/merged`，并以标记文件（id + 版本 + 方案 + 包哈希）
+作为键——再次访问直接列出，新版本或新方案重新暂存；至多保留最新的 6 个
+条目加上刚暂存的一个。已下架的条目继续读取已暂存的本地缓存（本地缓存
+语义），直到被清理。`mod_catalog_list_assets` / `mod_catalog_read_asset` 由此提供
+贴图画廊与语音试听列表（带场景标题的 `.wem` 行，经共享音频播放器）——分类、
+缩略图与转码都与已安装单元一致。视频类目只保留标准预览片段（为预览线程已有
+的片段而暂存 50 MB+ 的包并不划算），功能类目从不暂存。
+
 整条流水线已脚本化：`python scripts/mod_hub_preview_video.py encode --source <视频> --slug <slug>` 会跳过片头黑屏、完成编码并校验 3 MB / 20 秒预算；`publish --file <片段> --slug <slug> --discussion <编号>` 上传为 `preview-<slug>.mp4`，并幂等地改写线程 front-matter 与预览条目（`--dry-run` 只打印改写结果）。脚本按 `--ffmpeg` → `FFMPEG` 环境变量 → `PATH` 的顺序查找 ffmpeg，找不到时会自动安装 pip 包 `imageio-ffmpeg`（其 wheel 自带 ffmpeg）。release 下载树上任意 tag 均可——现有资产沿用 `mod-hub` tag。应用自身不捆绑 ffmpeg：预览由 Tauri webview 直接播放，只有生成片段或导入非 WebM 视频时才需要外部二进制。
 
 用 Discussions 而不是 Releases 的原因：评论区就是用户反馈与兼容性回报（"14.6 实测可用"会被索引器吸收为兼容性信号），Watch/通知即订阅，零后端成本。

@@ -92,6 +92,29 @@ function syncLabelOf(install: GameInstall): string {
   return installLabelOf(install) || installFolderName(install.path);
 }
 
+/** Catalog categories whose payload previews read the staged cache (the
+ *  online pane's material family). Video entries keep their play-gated
+ *  standard clip; the function categories carry nothing worth staging. */
+export const CATALOG_STAGED_CATS: CatalogCat[] = [
+  "skin",
+  "ui",
+  "voice",
+  "audio",
+  "model",
+];
+
+/** Whether a catalog entry's pane carries a staged-payload preview section. */
+export function isStagedPreviewCat(category: string): boolean {
+  return (CATALOG_STAGED_CATS as string[]).includes(category);
+}
+
+/** One catalog entry's staged-payload preview state (the pane's
+ *  CTA → staging → ready/error machine; "idle" = staged-absent). */
+export type CatalogStagedState = {
+  state: "idle" | "staging" | "ready" | "error";
+  error?: string;
+};
+
 export function useModHub() {
   const config = useConfigStore();
   const toast = useToast();
@@ -285,6 +308,71 @@ export function useModHub() {
     { immediate: true },
   );
 
+  // ── Catalog staged payload previews (online material entries) ────────
+  // The catalog pane previews a material entry's payload (skins, UI
+  // reskins, voice packs, models) from the staged cache BEFORE any
+  // install: the packages download into the app's preview cache on an
+  // explicit CTA, then AssetPreview's "catalog" source reads the SAME
+  // preview facility the installed/layer panes use. Per-entry state lives
+  // in one map (Vue instruments the mutations) so the pane keeps it
+  // across re-renders.
+  const catalogStaged = ref(new Map<string, CatalogStagedState>());
+
+  /** Cheap staged-presence probe: the listing resolves when the payload
+   *  is staged FOR THE ENTRY'S ACTIVE SCHEME, errors when it is not
+   *  (unstaged, or staged for another scheme — the backend compares the
+   *  marker), so a scheme switch alone flips the pane between the payload
+   *  and the download CTA. A staging run in flight is never clobbered. */
+  async function probeCatalogStaged(entry: CatalogEntry) {
+    if (catalogStaged.value.get(entry.id)?.state === "staging") return;
+    try {
+      await api.modCatalogListAssets(entry.id, activePreset(entry));
+      catalogStaged.value.set(entry.id, { state: "ready" });
+    } catch {
+      catalogStaged.value.set(entry.id, { state: "idle" });
+    }
+  }
+
+  /** The CTA action: download + merge the entry's packages into the
+   *  staged cache (progress rides the shared download bus under
+   *  `preview:<id>`, like the file-list window's pass), then flip to
+   *  ready. A failure parks the entry on "error" with the raw message —
+   *  the pane shows the standard error card and offers the CTA again. */
+  async function stageCatalogAssets(entry: CatalogEntry) {
+    if (catalogStaged.value.get(entry.id)?.state === "staging") return;
+    catalogStaged.value.set(entry.id, { state: "staging" });
+    try {
+      await api.modCatalogStageAssets(entry.id, activePreset(entry));
+      catalogStaged.value.set(entry.id, { state: "ready" });
+    } catch (e) {
+      catalogStaged.value.set(entry.id, {
+        state: "error",
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  /** A refreshed index invalidates the whole map — entries may have
+   *  swapped payloads, presets or left the index — and the open material
+   *  entry re-probes at once so its pane keeps telling the truth. */
+  function invalidateCatalogStaged() {
+    catalogStaged.value = new Map();
+    const sel = selection.value;
+    if (sel && sel.mode === "catalog" && isStagedPreviewCat(sel.entry.category)) {
+      void probeCatalogStaged(sel.entry);
+    }
+  }
+
+  // Selecting a material entry — or switching its scheme — probes the
+  // staged cache, so an entry staged earlier opens straight at its
+  // payload and a fresh one sits at the download CTA.
+  watch([selection, selectedPreset], () => {
+    const sel = selection.value;
+    if (sel && sel.mode === "catalog" && isStagedPreviewCat(sel.entry.category)) {
+      void probeCatalogStaged(sel.entry);
+    }
+  });
+
   // ── Known-mod relations of every installed unit (关联 mod) ─────────
   // Mods are not isolated directories: catch-all trees collect several
   // packs' files and the shared runtime components are written by every
@@ -391,6 +479,7 @@ export function useModHub() {
       catalog.value = index.mods;
       catalogSource.value = index.sourceVersion;
       catalogFetched.value = index.fetchedAt;
+      invalidateCatalogStaged();
     } catch (e) {
       catalogError.value = e instanceof Error ? e.message : String(e);
     } finally {
@@ -416,6 +505,7 @@ export function useModHub() {
             catalog.value = index.mods;
             catalogSource.value = index.sourceVersion;
             catalogFetched.value = index.fetchedAt;
+            invalidateCatalogStaged();
           })
           .catch(() => {});
       })) ?? null;
@@ -2338,6 +2428,9 @@ export function useModHub() {
     installMod,
     installModThisClient,
     installModEverywhere,
+    catalogStaged,
+    probeCatalogStaged,
+    stageCatalogAssets,
     uninstallMod,
     toggleUnit,
     uninstallUnit,

@@ -196,7 +196,7 @@ fn safe_rel(rel: &str) -> Option<String> {
 /// reach us from a remote catalog, so they can never become a path. A name
 /// that had to be rewritten carries a short content hash, so two different ids
 /// cannot collapse onto one store directory.
-fn safe_component(raw: &str) -> String {
+pub(crate) fn safe_component(raw: &str) -> String {
     let mut cleaned = String::with_capacity(raw.len());
     for ch in raw.chars() {
         if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
