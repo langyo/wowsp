@@ -299,9 +299,10 @@
     gap: 0.25rem;
   }
 
-  // Video packs: the inline player section under the stats. The label +
-  // one-line replacement hint sit above AssetPreview's own cards.
-  &__video {
+  // The preview section under the stats: one shared block for the login-clip
+  // player, the voice line list and the texture gallery — the layer's
+  // category only swaps the label/hint copy above AssetPreview's own cards.
+  &__preview {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;

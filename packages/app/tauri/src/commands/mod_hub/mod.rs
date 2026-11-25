@@ -858,6 +858,12 @@ pub use custom_import::{
     mod_hub_pick_custom_file, mod_hub_probe_custom_import,
 };
 pub use install::{__cmd__mod_hub_install, __tauri_command_name_mod_hub_install, mod_hub_install};
+pub use layer::{
+    __cmd__mod_hub_layer_asset_file_path, __cmd__mod_hub_layer_list_assets,
+    __cmd__mod_hub_layer_read_asset, __tauri_command_name_mod_hub_layer_asset_file_path,
+    __tauri_command_name_mod_hub_layer_list_assets, __tauri_command_name_mod_hub_layer_read_asset,
+    mod_hub_layer_asset_file_path, mod_hub_layer_list_assets, mod_hub_layer_read_asset,
+};
 pub use loader_health::{
     __cmd__mod_hub_loader_health, __tauri_command_name_mod_hub_loader_health, mod_hub_loader_health,
 };

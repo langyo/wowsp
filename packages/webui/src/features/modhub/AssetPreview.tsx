@@ -1,12 +1,13 @@
 /**
- * Installed-unit asset previews. The material section (mode "texture") is
- * ONE preview area for a pack's whole visual payload, from a single asset
- * listing: texture thumbnails render as a lazy grid (each tile pulls a
- * decoded, downscaled PNG data URL from the backend on first visibility)
- * and `.geometry` files (custom ship/gun/aircraft meshes) render as model
- * rows beneath — a click asks the backend to expand the click into its
- * hull-family GLB parts and hands them to the holo ModelStage above the
- * rows. Voice units (mode "audio") list their audio files one-per-row
+ * Installed-unit and managed-layer asset previews. The material section
+ * (mode "texture") is ONE preview area for a pack's whole visual payload,
+ * from a single asset listing: texture thumbnails render as a lazy grid
+ * (each tile pulls a decoded, downscaled PNG data URL from the backend on
+ * first visibility) and `.geometry` files (custom ship/gun/aircraft meshes)
+ * render as model rows beneath — a click asks the backend to expand the
+ * click into its hull-family GLB parts and hands them to the holo ModelStage
+ * above the rows. Voice units (mode "audio") list their audio files
+ * one-per-row
  * with a localized scenario title above the raw file name (from the
  * pack's mod.xml event map + the voice-scenes registry); a click hands
  * the track to the global audioPlayer store, whose AudioPlayerToast card
@@ -20,12 +21,27 @@
  * asset protocol (a clip is tens of MB — never a data URL).
  * Modes "image" and "model" are the single-kind fallbacks for panes that
  * only ever show one of the two material kinds.
+ *
+ * The `source` prop selects the store the listing and the bytes come from.
+ * "installed" (the default) reads an installed unit's rendered res_mods tree.
+ * "layer" reads one managed layer's app-data store
+ * (`<data>/mods/layers/<safe(packId)>/<safe(version)>/files`) instead, so a
+ * layer previews even while it is disabled or the stack is not rendered yet,
+ * and voice/texture payloads — which the game tree only carries after a
+ * render — can be listed at all. The layer store has no model-preview
+ * command (the 3D expansion reads a game-tree path), so model files are
+ * dropped from the usable set on that source.
  */
 import { defineComponent, ref, watch } from "vue";
 import { Box, Clapperboard, ImageIcon, Music, PlayCircle } from "@lucide/vue";
 import { useToast, HkMediaPlayer, HkScrollContainer } from "@celestia-island/hikari";
 
-import { api, type AssetFileInfo, type ModelPreviewPart } from "@/api";
+import {
+  api,
+  type AssetFileInfo,
+  type AssetPayload,
+  type ModelPreviewPart,
+} from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useAudioPlayerStore } from "@/stores/audioPlayer";
@@ -38,9 +54,23 @@ import { compareByScene, humanizeEvent, humanizeState, sceneLabel } from "./voic
 export default defineComponent({
   name: "AssetPreview",
   props: {
-    gameRoot: { type: String, required: true },
-    /** Installed unit primary path (res_mods-relative). */
-    relPath: { type: String, required: true },
+    /** Which store the preview reads from: an installed unit's rendered
+     *  res_mods tree ("installed", the default) or one managed layer's
+     *  app-data store ("layer"). The layer source previews a disabled or
+     *  not-yet-rendered pack, and covers video/voice/texture payloads alike. */
+    source: {
+      type: String as () => "installed" | "layer",
+      default: "installed",
+    },
+    /** Installed source: the game install root. */
+    gameRoot: { type: String, default: "" },
+    /** Installed source: the unit's res_mods-relative root. */
+    relPath: { type: String, default: "" },
+    /** Layer source: the pack id + version that key the layer store
+     *  directory. Both are ignored by the installed source, exactly as
+     *  gameRoot/relPath are ignored by the layer one. */
+    layerPackId: { type: String, default: "" },
+    layerVersion: { type: String, default: "" },
     /** `texture` grid + model stage (one listing), `image` grid, `audio`
      *  list, `model` rows + 3D stage, or `video` inline players. */
     mode: {
@@ -51,6 +81,11 @@ export default defineComponent({
      *  that are merely possible (models under a script unit) stay
      *  invisible instead of showing an empty note. */
     silentEmpty: { type: Boolean, default: false },
+    /** When set, an empty usable list renders the note with THIS i18n key
+     *  instead of being suppressed by silentEmpty — a titled section (the
+     *  layer pane's preview block) explains its own emptiness rather than
+     *  leaving a bare label + hint above nothing. */
+    emptyNoteKey: { type: String, default: "" },
   },
   setup(props) {
     const files = ref<AssetFileInfo[]>([]);
@@ -71,12 +106,59 @@ export default defineComponent({
     const modelRel = ref("");
     const modelLoading = ref(false);
     let modelSession = 0;
+    // Generation token + cache namespace for the async listing and the
+    // rel-keyed preview caches (see load()).
+    let loadSession = 0;
+    let cacheScope = "";
+    let cacheRoot = "";
     // Video mode: only the absolute PATH crosses IPC — convertFileSrc turns
     // it into an asset-protocol URL the <video> element streams itself.
     const videoUrls = ref<Record<string, string>>({});
     const videoFailed = ref<Record<string, boolean>>({});
 
+    // ── Source routing ─────────────────────────────────────────────────
+    // ONE switch feeds every data path: the listing, the thumbnail/audio
+    // read and the video's absolute path each have an installed-tree
+    // command and a layer-store twin, so the rest of the component never
+    // branches on the source again.
+    const isLayer = (): boolean => props.source === "layer";
+
+    function listAssets(): Promise<AssetFileInfo[]> {
+      return isLayer()
+        ? api.modHubLayerListAssets(props.layerPackId, props.layerVersion)
+        : api.modHubListAssets(props.gameRoot, props.relPath);
+    }
+
+    function readAsset(rel: string): Promise<AssetPayload> {
+      return isLayer()
+        ? api.modHubLayerReadAsset(props.layerPackId, props.layerVersion, rel)
+        : api.modHubReadAsset(props.gameRoot, rel);
+    }
+
+    function assetFilePath(rel: string): Promise<string> {
+      return isLayer()
+        ? api.modHubLayerAssetFilePath(props.layerPackId, props.layerVersion, rel)
+        : api.modHubAssetFilePath(props.gameRoot, rel);
+    }
+
+    /** The global audio player's track key. Layer-store rels are
+     *  LAYER-relative, so two packs routinely share them (`banks/mods/<bank>`
+     *  trees, an upgraded pack re-listing the same paths): handing the bare
+     *  rel to the player would toggle whichever OTHER pack loaded that key
+     *  instead of loading this pack's bytes, and would light up the wrong
+     *  row. Installed units keep the bare rel — unit-unique by construction
+     *  and the pre-existing key shape. */
+    function audioKey(rel: string): string {
+      return isLayer()
+        ? `layer:${props.layerPackId}@${props.layerVersion}/${rel}`
+        : rel;
+    }
+
     async function load() {
+      // Generation token: a listing (or a thumbnail/video read) that settles
+      // after the next switch must not publish into the new store — the pane
+      // patches in place across layer/unit switches.
+      const session = ++loadSession;
       loading.value = true;
       // Kill any in-flight model expansion for the old unit — and drop its
       // busy flag, or a load settling after a unit switch would leave the
@@ -87,15 +169,50 @@ export default defineComponent({
       modelRel.value = "";
       videoUrls.value = {};
       videoFailed.value = {};
+      // Thumbnail payloads and failure markers are keyed by rel. Layer-store
+      // rels are LAYER-relative (two voice banks share bank paths, an
+      // upgraded pack re-lists the same files), so any switch into or out of
+      // a layer re-keys the caches. Installed units carry unit-unique rels,
+      // so an installed→installed switch KEEPS them: re-decoding up to 24
+      // tiles is a real IPC + placeholder-flash cost for no correctness win.
+      const nextCacheScope = isLayer()
+        ? `layer:${props.layerPackId}@${props.layerVersion}`
+        : `installed:${props.relPath}`;
+      const nextCacheRoot = isLayer() ? "" : props.gameRoot;
+      const touchedLayerStore = isLayer() || cacheScope.startsWith("layer:");
+      // The same rel in ANOTHER install's tree resolves to another file, so
+      // a root switch re-keys the caches exactly like a layer switch does.
+      const rootChanged = nextCacheRoot !== cacheRoot;
+      cacheScope = nextCacheScope;
+      cacheRoot = nextCacheRoot;
+      if (touchedLayerStore || rootChanged) {
+        thumbs.value = {};
+        failed.value = {};
+      }
       try {
-        files.value = await api.modHubListAssets(props.gameRoot, props.relPath);
+        const next = await listAssets();
+        if (session !== loadSession) return;
+        files.value = next;
       } catch {
+        if (session !== loadSession) return;
         files.value = [];
       } finally {
-        loading.value = false;
+        if (session === loadSession) loading.value = false;
       }
     }
-    watch(() => [props.gameRoot, props.relPath], load, { immediate: true });
+    // A unit switch and a layer switch are the same event to this pane: the
+    // source and the ids it keys join the installed root/path in the deps.
+    watch(
+      () => [
+        props.source,
+        props.gameRoot,
+        props.relPath,
+        props.layerPackId,
+        props.layerVersion,
+      ],
+      load,
+      { immediate: true },
+    );
 
     // Thumbnails pull eagerly (capped): texture tiles are small decoded
     // PNGs, and an eager batch keeps the grid alive where an
@@ -121,24 +238,30 @@ export default defineComponent({
 
     async function ensureVideoUrl(rel: string) {
       if (videoUrls.value[rel] || videoFailed.value[rel]) return;
+      const session = loadSession;
       try {
-        const abs = await api.modHubAssetFilePath(props.gameRoot, rel);
+        const abs = await assetFilePath(rel);
         // convertFileSrc is the established res_mods-to-webview route (see
         // holographic/ribbonIcons.ts); the import stays lazy so plain-browser
         // dev never touches the Tauri shell at module load.
         const { convertFileSrc } = await import("@tauri-apps/api/core");
+        if (session !== loadSession) return;
         videoUrls.value[rel] = convertFileSrc(abs);
       } catch {
+        if (session !== loadSession) return;
         videoFailed.value[rel] = true;
       }
     }
 
     async function ensureThumb(rel: string) {
       if (thumbs.value[rel] || failed.value[rel]) return;
+      const session = loadSession;
       try {
-        const payload = await api.modHubReadAsset(props.gameRoot, rel);
+        const payload = await readAsset(rel);
+        if (session !== loadSession) return;
         thumbs.value[rel] = payload.dataUrl;
       } catch {
+        if (session !== loadSession) return;
         failed.value[rel] = true;
       }
     }
@@ -153,8 +276,10 @@ export default defineComponent({
     async function toggle(file: AssetFileInfo) {
       if (!file.playable) return;
       const name = file.rel.split("/").pop() || file.rel;
-      await player.play(file.rel, name, async () => {
-        const payload = await api.modHubReadAsset(props.gameRoot, file.rel);
+      // The player key is namespaced by store (see audioKey): a bare layer
+      // rel would collide across packs and toggle somebody else's track.
+      await player.play(audioKey(file.rel), name, async () => {
+        const payload = await readAsset(file.rel);
         return payload.dataUrl;
       });
     }
@@ -314,8 +439,19 @@ export default defineComponent({
         );
       }
       const kinds = props.mode === "texture" ? ["image", "model"] : [props.mode];
-      const usable = files.value.filter((f) => kinds.includes(f.kind));
+      // The layer store is not wired for model previews: the 3D expansion
+      // reads a game-tree path, so a mesh row could never load. Drop model
+      // files on that source (installed units keep listing them).
+      const usable = files.value.filter(
+        (f) => kinds.includes(f.kind) && !(isLayer() && f.kind === "model"),
+      );
       if (usable.length === 0) {
+        // A titled section (the layer pane's preview block) explains its own
+        // emptiness instead of leaving a bare label + hint above nothing; an
+        // optional section (silentEmpty) simply stays invisible.
+        if (props.emptyNoteKey) {
+          return <div class="asset-preview__note">{t(props.emptyNoteKey)}</div>;
+        }
         if (props.silentEmpty) return null;
         return <div class="asset-preview__note">{t("resources.noAssets")}</div>;
       }
@@ -358,7 +494,7 @@ export default defineComponent({
                   data-hint={t("resources.audioPlay")}
                   onClick={() => void toggle(f)}
                 >
-                  {player.active && player.rel === f.rel ? (
+                  {player.active && player.rel === audioKey(f.rel) ? (
                     <PlayCircle size={14} />
                   ) : (
                     <Music size={14} />

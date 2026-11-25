@@ -992,4 +992,18 @@ export const modHubApi = {
    *  conflict-path list. */
   modHubLayerPaths: (gameRoot: string) =>
     transport.invoke<LayerPathWinner[]>(RPC.mod_hub_layer_paths, { gameRoot }),
+  // A managed layer's previewable payload, listed straight from its store
+  // (data/mods/layers/<pack>/<version>/files) so the pane can preview a pack
+  // even while the stack is unrendered. Paths are layer-relative (the same
+  // res_mods-shaped spelling the layer's files carry).
+  modHubLayerListAssets: (packId: string, version: string) =>
+    transport.invoke<AssetFileInfo[]>(RPC.mod_hub_layer_list_assets, { packId, version }),
+  // One layer-store asset as a browser-ready payload (image thumbnail /
+  // audio data URL); videos use the path command below instead.
+  modHubLayerReadAsset: (packId: string, version: string, relPath: string) =>
+    transport.invoke<AssetPayload>(RPC.mod_hub_layer_read_asset, { packId, version, relPath }),
+  // Absolute path of one layer-store video, granted to Tauri's asset
+  // protocol — the player streams it, so its bytes never cross IPC.
+  modHubLayerAssetFilePath: (packId: string, version: string, relPath: string) =>
+    transport.invoke<string>(RPC.mod_hub_layer_asset_file_path, { packId, version, relPath }),
 };
