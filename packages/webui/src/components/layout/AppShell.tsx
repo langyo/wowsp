@@ -485,9 +485,10 @@ export default defineComponent({
       <div class="app-shell">
         <WallpaperRenderer />
         {/* Update prompting lives entirely in top-right toast surfaces —
-            the updater store raises a blocking toast prompt (立即更新 /
-            稍后), then the shared DownloadToast pass card (spinner,
-            progress bar, 取消); nothing renders inline here. */}
+            the updater store raises a blocking toast prompt (立即更新 +
+            the cancel ✕, whose accessible name stays 稍后), then the
+            shared DownloadToast pass card (spinner, progress bar, the
+            same icon cancel); nothing renders inline here. */}
         {isMobile.value ? (
           // Phone-layout nav: the sidebar lives in a left drawer behind
           // the title-bar hamburger. hikari's back guard pushes a history

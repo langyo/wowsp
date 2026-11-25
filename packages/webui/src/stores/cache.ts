@@ -267,9 +267,10 @@ export const useCacheStore = defineStore("resourceCache", () => {
    * catch-up the startup policy defers to (AppShell calls this on the
    * first boot of a NEW build when the manifest reports an outdated
    * pack). Same grammar as the updater's idle prompt: a hikari
-   * blocking toast with 立即更新 / 稍后. 立即更新 starts the pass right
-   * here — the progress renders on the shared top-right card, so the
-   * prompt never has to navigate; 稍后 just dismisses — the status card
+   * blocking toast with 立即更新 + the cancel ✕ (accessible name 稍后).
+   * 立即更新 starts the pass right here — the progress renders on the
+   * shared top-right card, so the prompt never has to navigate; the ✕
+   * just dismisses — the status card
    * in Settings → resources keeps saying "updates available", and the
    * next post-update restart asks again.
    */

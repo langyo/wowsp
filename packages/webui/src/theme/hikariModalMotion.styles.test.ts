@@ -89,9 +89,13 @@ describe("hikari's whole-window open/close choreography", () => {
     // transitioned property froze its matrices against the mount-time box,
     // so a window whose content grew during its enter seated itself on the
     // unparsed -50% until the ride ended. The longhand re-resolves against
-    // the live box every frame; the dragged-window shift rides it too.
+    // the live box every frame; the dragged-window shift rides it too, and
+    // since hikari #1513 (picked up in 0.55.485) so does the TOP-EDGE
+    // anchor: a window whose content grows keeps its top edge parked and
+    // grows downward from there instead of re-centring mid-growth
+    // (useAnchoredTop writes --hk-modal-anchor-y; 0px when at rest).
     expect(frame).toContain(
-      "translate: calc(-50% + var(--hk-modal-shift-x, 0px)) calc(-50% + var(--hk-modal-shift-y, 0px))",
+      "translate: calc(-50% + var(--hk-modal-shift-x, 0px)) calc(-50% + var(--hk-modal-shift-y, 0px) + var(--hk-modal-anchor-y, 0px))",
     );
     expect(frame!.replace(/\s+/g, " "), "the base rule must not carry a centring transform").not.toMatch(
       /transform:[^;]*-50%/,
@@ -133,11 +137,12 @@ describe("hikari's whole-window open/close choreography", () => {
     expect(to).toContain("opacity: 1;");
     expect(to).toContain("translateY(0) scale(1)");
     // Both ride ends are px-only: the centring rides the frame's
-    // `translate` longhand (pinned above), so a shift token here would mean
-    // the frozen-matrix carrier came back.
+    // `translate` longhand (pinned above), so a shift or anchor token here
+    // would mean the frozen-matrix carrier came back.
     for (const body of [from, to]) {
       expect(body).not.toContain("var(--hk-modal-shift-x, 0px)");
       expect(body).not.toContain("var(--hk-modal-shift-y, 0px)");
+      expect(body).not.toContain("var(--hk-modal-anchor-y, 0px)");
     }
   });
 
