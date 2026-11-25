@@ -8,13 +8,15 @@ import "./ToastCardBase.scss";
  *  plus the piggy's own skin tone. */
 export type ToastCardTone = "info" | "success" | "warning" | "piggy";
 
-/** An action pill under the headline. `kind`: primary = the filled white
- *  pill (the card's main move), outline = the translucent white outline
- *  (the quiet fallback), quiet = the small outlined text button (the
- *  pass card's 取消 grammar). */
+/** An action in the foot row (right of the meta readout). `kind`:
+ *  primary = the filled white pill (the card's main move), outline = the
+ *  translucent white outline (the quiet fallback), quiet = the small
+ *  outlined text button, close = the icon × button (the quiet ×'s
+ *  grammar; the label survives as aria-label + tooltip — the download
+ *  card's 取消). */
 export interface ToastCardAction {
   label: string;
-  kind?: "primary" | "outline" | "quiet";
+  kind?: "primary" | "outline" | "quiet" | "close";
   disabled?: boolean;
   /** Legacy per-card BEM hook appended beside the base classes (the
    *  UpdateAppliedToast parity tests select `.update-applied__view`). */
@@ -60,9 +62,11 @@ function readLeaveMs(): number {
  * fixed slot (hikari's toast column geometry — top 4rem / right 1rem /
  * the `--hk-z-toast` band / 22rem / blur), the ONE enter keyframe and the
  * ONE --leave modifier (driven by the delayed-unmount machine above), the
- * headline row (icon slot, message, never-shrinking meta, trailing slot,
- * quiet ×), the body slot, the right-aligned action pills and the
- * progress slot region.
+ * headline row (icon slot, message, trailing slot, quiet × — the whole
+ * line may ellipsize now that the meta moved out), the body slot, the
+ * foot row (the never-shrinking meta readout on its left, the
+ * right-aligned action area — pills or the icon × cancel — on its
+ * right) and the progress slot region.
  *
  * The base stays STORE-DUMB: sync-flush frozen-snapshot watchers, mount
  * graces and seek-flag resets are per-card wrapper concerns — each card
@@ -91,8 +95,10 @@ export default defineComponent({
     /** Hover-hint for the headline (the delegated data-hint channel —
      *  the mod pass surfaces its full step text on hover). */
     hint: { type: String, default: "" },
-    /** Never-shrinking tabular readout on the row's right (the mod
-     *  pass's "downloading 42% · 1.5 MB/s"). Empty → not rendered. */
+    /** Never-shrinking tabular readout in the foot row's left (the mod
+     *  pass's "downloading 42% · 1.5 MB/s"). The `meta` slot overrides
+     *  it when the readout needs live node structure. Empty and no
+     *  slot → not rendered. */
     meta: { type: String, default: "" },
     /** Render the quiet × dismiss affordance (emits `close`). */
     close: { type: Boolean, default: false },
@@ -159,9 +165,6 @@ export default defineComponent({
               >
                 {slots.message ? slots.message() : props.message}
               </p>
-              {props.meta ? (
-                <span class={["toast-card__meta", `${cls}__meta`]}>{props.meta}</span>
-              ) : null}
               {slots.trailing?.()}
               {props.close && (
                 <button
@@ -175,19 +178,52 @@ export default defineComponent({
               )}
             </div>
             {slots.body?.()}
-            {props.actions.length > 0 && (
-              <div class="toast-card__actions">
-                {props.actions.map((action) => (
-                  <button
-                    key={action.label}
-                    type="button"
-                    class={["toast-card__action", `toast-card__action--${action.kind ?? "primary"}`, action.class]}
-                    disabled={action.disabled}
-                    onClick={action.onClick}
-                  >
-                    {action.label}
-                  </button>
-                ))}
+            {/* The foot row — the meta readout's dedicated home (it left
+                the headline row so the ellipsis owns that line) sharing
+                the row with the right-aligned action area; rendered only
+                when either side has content, so plain cards keep the old
+                flat geometry. */}
+            {(slots.meta != null || props.meta || props.actions.length > 0) && (
+              <div class="toast-card__foot">
+                {(slots.meta != null || props.meta) && (
+                  <span class={["toast-card__meta", `${cls}__meta`]}>
+                    {slots.meta ? slots.meta() : props.meta}
+                  </span>
+                )}
+                {props.actions.length > 0 && (
+                  <div class="toast-card__actions">
+                    {props.actions.map((action) =>
+                      action.kind === "close" ? (
+                        // The icon × cancel: the quiet ×'s grammar, the
+                        // label riding as aria-label (accessible name)
+                        // + data-hint (the delegated tooltip channel —
+                        // native title= is fenced out repo-wide) so the
+                        // old visible text stays discoverable.
+                        <button
+                          key={action.label}
+                          type="button"
+                          class={["toast-card__close", action.class]}
+                          aria-label={action.label}
+                          data-hint={action.label}
+                          disabled={action.disabled}
+                          onClick={action.onClick}
+                        >
+                          <X size={14} />
+                        </button>
+                      ) : (
+                        <button
+                          key={action.label}
+                          type="button"
+                          class={["toast-card__action", `toast-card__action--${action.kind ?? "primary"}`, action.class]}
+                          disabled={action.disabled}
+                          onClick={action.onClick}
+                        >
+                          {action.label}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {slots.progress?.()}

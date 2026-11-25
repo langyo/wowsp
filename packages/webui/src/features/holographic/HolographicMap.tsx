@@ -5662,7 +5662,7 @@ const RECORDED_DOLLY_MIN = -40;
               label (feed / models / finalize / save) or, once frames run,
               the percentage + frame counts; the bar is determinate only
               while frames advance and indeterminate through the pre-render
-              stages and the mux/write tail. The cancel pill stays up the
+              stages and the mux/write tail. The icon × cancel stays up the
               whole time; the card teleports to the top-right toast column. */}
           <ToastCardBase
             ref={exportCard}
@@ -5674,8 +5674,11 @@ const RECORDED_DOLLY_MIN = -40;
               exporting.value
                 ? [
                     {
+                      // The icon × cancel (the family's unified cancel
+                      // grammar — no text pill on the toast cards): the
+                      // label rides as aria-label + data-hint tooltip.
                       label: i18nT("replay.export.cancelRun"),
-                      kind: "quiet",
+                      kind: "close",
                       onClick: cancelPlaybackExport,
                     },
                   ]

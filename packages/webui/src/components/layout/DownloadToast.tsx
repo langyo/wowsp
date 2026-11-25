@@ -39,11 +39,13 @@ interface HeldPass {
  * drives the bar. That is everything the retired UpdateToast and
  * ModUpdateToast cards showed.
  *
- * Layout follows the mod pass card's split: the headline takes the ellipsis
- * while the never-shrinking meta carries the live "42% · 1.5 MB/s · 00:12
- * left", so a long localized resource name can never eat the numbers. The bar
- * runs the shared indeterminate slide whenever the phase has no fraction
- * (queued, racing mirrors, applying, an owner batch between items).
+ * Layout: the headline takes the whole ellipsis, the step line sits under
+ * it as the body, and the foot row carries the split — the never-shrinking
+ * live "42% · 1.5 MB/s · 00:12 left" on its left, the icon × cancel on its
+ * right — so a long localized resource name can never eat the numbers.
+ * The bar runs last, the shared indeterminate slide whenever the phase has
+ * no fraction (queued, racing mirrors, applying, an owner batch between
+ * items).
  *
  * The mount grace keeps a pass that lands instantly (already current, refused
  * before any byte) from flashing a card — the store turns those into a toast
@@ -172,8 +174,10 @@ export default defineComponent({
             cancellable && pass
               ? [
                   {
+                    // The × icon action — the quiet pill's label lives on
+                    // as the button's aria-label + tooltip.
                     label: t("settings.cacheCancel"),
-                    kind: "quiet",
+                    kind: "close",
                     onClick: () => void downloads.cancel(pass.kind),
                   },
                 ]
