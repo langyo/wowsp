@@ -4,14 +4,18 @@
 //! in [`relay_core::peers`]; this module owns the registry document,
 //! the upstream-list subscription and the §5.2 liveness callback.
 //!
-//! Quota economics (review findings 1c/2): the OWN registry is ONE KV
-//! document (`peers:own`, the whole `Vec<PeerRow>` — 128 rows ×
-//! ~300 B fits trivially), rewritten only on announce (already
-//! bounded 10/h/IP); the list route is fronted by a 60 s edge-Cache
-//! entry and spends the shared public-read budget (`peers` scope,
-//! the digests/sponsors pattern) only on edge misses. No KV LIST, no
-//! per-row GETs — the whole namespace costs ~2 reads per edge-miss
-//! list render and ~1 write per accepted announce.
+//! Quota economics (review findings 1c/2, 2026-11-25 KV incident):
+//! the OWN registry is ONE KV document (`peers:own`, the whole
+//! `Vec<PeerRow>` — 128 rows × ~300 B fits trivially), rewritten only
+//! on announce (already bounded 10/h/IP). The list route and the
+//! lookup pull-through share ONE 60 s edge-cached mesh view
+//! (`https://mesh.edge/view`), so a warm mesh costs ZERO storage
+//! reads; a cold view miss pays ONE read on the official node (its
+//! list IS its own registry, and `PEERS_UPSTREAM` — unset there —
+//! gates the second read that used to be a guaranteed miss) and TWO
+//! on a subscriber. No KV LIST, no per-row GETs, no per-request
+//! counter writes: ≤ 2 reads per 60 s view window plus ~1 write per
+//! accepted announce.
 //!
 //! - The official node leaves `PEERS_UPSTREAM` unset: it IS the seed
 //!   everyone subscribes, so its list is its own registry only.
@@ -39,6 +43,10 @@ const KV: &str = "LOOKUP_KV";
 const KV_FALLBACK: &str = "FEEDBACK_KV";
 /// The edge-cache key of the list render (60 s, the route's max-age).
 const EDGE_LIST_KEY: &str = "https://peers.edge/list";
+/// The edge-cache key of the merged mesh view (60 s — the upstream
+/// subscription's own window; shared by the list route and the lookup
+/// pull-through, see [`mesh_view`]).
+const EDGE_MESH_KEY: &str = "https://mesh.edge/view";
 
 /// The cached upstream subscription's wrapper shape.
 #[derive(Serialize, Deserialize)]
@@ -51,6 +59,7 @@ struct UpstreamCache {
 /// This node's merged view of the mesh, plus whether the OWN registry
 /// contributed any row (the §5.4 pull-through picks candidates
 /// deterministically-random when it did not — see lookup.rs).
+#[derive(Serialize, Deserialize)]
 pub(crate) struct MeshView {
     pub own_empty: bool,
     pub peers: Vec<PeerRow>,
@@ -72,8 +81,11 @@ fn now_secs() -> u64 {
 
 /// The broadcast list: own registry rows ∪ the upstream subscription
 /// (own rows winning — `merge_peers`), ETagged for cheap
-/// revalidation, edge-cached a minute, public-read-budgeted on edge
-/// misses.
+/// revalidation and edge-cached a minute. No per-request KV budget
+/// counter: the route reads a fixed-key 60 s cache, so the old
+/// counter PUT on every edge miss was pure write amplification (the
+/// empty-registry autodiscover walk paid it every 10 minutes —
+/// 2026-11-25 incident).
 pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
     match req.method() {
         Method::Options => return cors_preflight(),
@@ -81,7 +93,7 @@ pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
         _ => return err(405, "method_not_allowed"),
     }
     // Edge cache first (the digests.rs pattern): a warm edge answers
-    // with zero storage reads and zero budget spends.
+    // with zero storage reads and zero KV writes.
     let cache = Cache::default();
     if let Ok(Some(cached)) = cache.get(EDGE_LIST_KEY.to_string(), true).await {
         let etag = cached.headers().get("ETag")?.unwrap_or_default();
@@ -89,13 +101,6 @@ pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
             return not_modified(&etag);
         }
         return Ok(cached);
-    }
-    // Public-read budget on the miss path only (audit M-10's scope
-    // split, same as digests/sponsors).
-    if !crate::replay::spend_public_read(&env, "peers", &client_ip(&req)).await? {
-        let mut resp = crate::replay::err_retry(429, "rate_limited", 600)?;
-        resp.headers_mut().set("Access-Control-Allow-Origin", "*")?;
-        return Ok(resp);
     }
     // §5.1's subscription: fetch the upstream list at most once per
     // minute (the cache window mirrors the route's own max-age).
@@ -135,16 +140,55 @@ fn not_modified(etag: &str) -> Result<Response> {
 
 /// This node's merged view of the mesh: own registry document plus
 /// the CACHED upstream subscription (never triggering a fetch — the
-/// list route owns the refresh, so the lookup pull-through stays
-/// fast: exactly two KV reads on a cold miss).
+/// list route owns the refresh), fronted by a 60 s edge-cache entry
+/// so both the list route and the lookup pull-through read ZERO KV
+/// rows while the view is warm. On a cold view miss the official node
+/// pays exactly ONE read: its list IS its own registry, and
+/// `PEERS_UPSTREAM` is unset there, so the never-written
+/// `peers:upstream` document is not even attempted (that
+/// guaranteed-miss read was half the mesh's read bill in the
+/// 2026-11-25 incident). A self-host with a subscription pays two.
+///
+/// Failure posture: every cache read/serialize/put error silently
+/// falls back to the direct computation, so the view's semantics never
+/// change — only the read count does.
 pub(crate) async fn mesh_view(env: &Env) -> MeshView {
+    let cache = Cache::default();
+    if let Ok(Some(mut cached)) = cache.get(EDGE_MESH_KEY, true).await {
+        if let Ok(view) = cached.json::<MeshView>().await {
+            return view;
+        }
+    }
     let own = own_rows(env).await.unwrap_or_default();
     let own_empty = own.is_empty();
-    let upstream = cached_upstream_rows(env).await.unwrap_or_default();
-    MeshView {
+    let upstream = if upstream_var(env).is_some() {
+        cached_upstream_rows(env).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let view = MeshView {
         own_empty,
         peers: peers::merge_peers(&own, &upstream),
+    };
+    // Best-effort edge fill (the cache-control is what makes the entry
+    // storable; a failed put just means the next cold miss recomputes).
+    if let Ok(mut resp) = Response::from_json(&view) {
+        let _ = resp
+            .headers_mut()
+            .set("Cache-Control", "public, max-age=60");
+        let _ = cache.put(EDGE_MESH_KEY, resp).await;
     }
+    view
+}
+
+/// The configured upstream subscription URL, or `None` when this node
+/// is the seed itself (the official node leaves `PEERS_UPSTREAM`
+/// unset — it IS the seed everyone subscribes; a set-but-empty var
+/// counts as unset). Single source of the "is an upstream configured?"
+/// question: [`mesh_view`] skips its second KV read when it is not,
+/// [`refresh_upstream`] skips the fetch.
+fn upstream_var(env: &Env) -> Option<String> {
+    var(env, "PEERS_UPSTREAM").filter(|url| !url.trim().is_empty())
 }
 
 /// The own registry document (`peers:own`, one read), lazily
@@ -207,7 +251,9 @@ async fn upsert_own_row(env: &Env, row: PeerRow) -> Result<()> {
 
 /// The upstream subscription rows from the `peers:upstream` cache
 /// (stale rows are still merged — a temporarily unreachable upstream
-/// must not empty the list).
+/// must not empty the list). Only reached when [`upstream_var`] says a
+/// subscription exists: the official node never writes that document,
+/// so reading it there would be a guaranteed miss per cold view.
 async fn cached_upstream_rows(env: &Env) -> Result<Vec<PeerRow>> {
     let kv = registry_kv(env)?;
     let raw = kv
@@ -230,7 +276,7 @@ async fn cached_upstream_rows(env: &Env) -> Result<Vec<PeerRow>> {
 /// or garbage row into our list). Every failure keeps the cached
 /// rows serving.
 async fn refresh_upstream(env: &Env) {
-    let Some(upstream) = var(env, "PEERS_UPSTREAM") else {
+    let Some(upstream) = upstream_var(env) else {
         return;
     };
     let Ok(kv) = registry_kv(env) else {
