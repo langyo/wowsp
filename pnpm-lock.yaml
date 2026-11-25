@@ -35,8 +35,8 @@ importers:
   packages/console:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.327
-        version: 0.55.399(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.485
+        version: 0.55.485(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -100,8 +100,8 @@ importers:
   packages/website:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.327
-        version: 0.55.399(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.485
+        version: 0.55.485(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -143,8 +143,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.464
-        version: 0.55.464(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.485
+        version: 0.55.485(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -411,19 +411,8 @@ packages:
   '@bytecodealliance/preview2-shim@0.31.1':
     resolution: {integrity: sha512-uDVB/IhExDW70TquqVx2l2Q5uwwpH7r5M2ltYccux+0YxXBm4TvqyNHTyYxcoLBsoAar28o7uZSj7GOKVx9uvA==}
 
-  '@celestia-island/hikari@0.55.399':
-    resolution: {integrity: sha512-b2L+gmqC6rMob//OMMufNCiO5ignmY2UByr7OxAGa4jh0U+Sp3RAmm2Du0ZI2Dl/PC3IrI2KjMbysMg/33N+7g==}
-    peerDependencies:
-      '@types/three': ^0.185
-      pinia: ^3
-      three: ^0.185
-      vue: ^3
-    peerDependenciesMeta:
-      pinia:
-        optional: true
-
-  '@celestia-island/hikari@0.55.464':
-    resolution: {integrity: sha512-bEYHoS/xGJkPJ96X7dtBdtHegmHYnk+okSDE5bn8qjhsp/vE28j081lL8wGJOlhsubjVMqyq+dUVnlKSTUbIuQ==}
+  '@celestia-island/hikari@0.55.485':
+    resolution: {integrity: sha512-L06ikSmuQfGZ12YfsX6KMp28EHDG6nh0Isit8QDhiTrS7cHAXf27357a+Iub0cvKAcZ42Nt4qjnxGVi4ROZoxw==}
     peerDependencies:
       '@types/three': ^0.185
       pinia: ^3
@@ -3444,9 +3433,10 @@ snapshots:
     dependencies:
       '@bytecodealliance/jco-node-fs': 0.3.2
 
-  '@celestia-island/hikari@0.55.399(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.485(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@bytecodealliance/preview2-shim': 0.31.1
+      '@celestia-island/tairitsu-host-client': 0.1.0
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.185.4
       '@xterm/addon-fit': 0.11.0
@@ -3458,21 +3448,7 @@ snapshots:
       three: 0.185.1
       vue: 3.5.43(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.399(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
-    dependencies:
-      '@bytecodealliance/preview2-shim': 0.31.1
-      '@celestia-island/tairitsu-transport': 0.2.0
-      '@types/three': 0.186.0
-      '@xterm/addon-fit': 0.11.0
-      '@xterm/addon-image': 0.10.0-beta.332(@xterm/xterm@6.1.0-beta.337)
-      '@xterm/xterm': 6.1.0-beta.337
-      dompurify: 3.4.18
-      lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
-      marked: 18.2.0
-      three: 0.186.1
-      vue: 3.5.43(typescript@7.0.2)
-
-  '@celestia-island/hikari@0.55.464(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.485(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@bytecodealliance/preview2-shim': 0.31.1
       '@celestia-island/tairitsu-host-client': 0.1.0

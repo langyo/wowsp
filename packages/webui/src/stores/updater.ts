@@ -27,8 +27,9 @@
  * means the installer was spawned.
  *
  * The flow is prompted, never automatic. Discovering a newer version only
- * raises the idle prompt — a hikari blocking toast (立即更新 / 稍后) in the
- * top-right stack; answering 立即更新 (or the AboutModal pill) starts the
+ * raises the idle prompt — a hikari blocking toast (立即更新 + the cancel ✕,
+ * whose accessible name is 稍后) in the top-right stack; answering 立即更新
+ * (or the AboutModal pill) starts the
  * pass on the SHARED download card (DownloadToast): the spinner covers the
  * mirror race, the bar follows the artifact with percent + speed + ETA, and
  * its 取消 action is the registry's `update_cancel` verb — the part file

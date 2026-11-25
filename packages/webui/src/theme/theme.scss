@@ -443,9 +443,22 @@ html[data-wallpaper-art="true"] body::after {
 }
 
 /* Same convention on the blocking toast's warning variant (hikari pins
-   the identical literal dark-amber ink there). */
+   the identical literal dark-amber ink there). Its cancel is the house
+   ghost icon button now (hikari 0.55.485), and that button declares its
+   ink ON itself through the --hi-icon-button-* bridge instead of
+   inheriting `color` — re-pin the bridge at the same seat so the ✕
+   follows the white-ink convention too (hikari's own band rule targets
+   the same selector; this sheet loads after its aggregate, so the
+   restatement wins). Info/danger need no bridge here: the ✕ rides the
+   same on-tone variable their text cancel used, which the picks below
+   already drive white. */
 .hk-blocking-toast-warning {
   color: #fff;
+
+  .hk-blocking-toast-cancel {
+    --hi-icon-button-icon-color: #fff;
+    --hi-icon-button-icon-color-active: #fff;
+  }
 }
 
 /* Solid DANGER surfaces carry white ink in every scheme (user direction
