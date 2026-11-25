@@ -164,6 +164,35 @@ user-attachment / raw URL. The indexer keeps the line only for https URLs
 on those GitHub hosts, emits it as `preview_video` in the version payload,
 and the app streams it through hikari's media player behind a play button.
 
+The gate carries ONLY the play button over the poster (a poster-less clip
+renders a dark tile with the button alone — the format line below the
+media already names the standard), and the player card reuses the same
+asset-preview styling as the installed/layer panes.
+
+#### Payload previews (staged catalog assets)
+
+Material-category entries (`skin`, `ui`, `voice`, `audio`, `model`) also
+preview their REAL payload in the detail pane, through the SAME
+AssetPreview facility the installed and layer panes use — not a third
+implementation. Staging is explicit: the pane offers a download CTA
+(sized from the entry's package list), the packages flow through the
+same mirror ladder + content-addressed cache an install uses with
+progress on the `preview:<id>` bus, and the payload is extracted and
+merged with the install's own FIRST-WINS merge (the first package's copy
+wins a duplicated target; differing duplicates are dropped and logged;
+junk skipped) into a per-entry cache dir `<cache>/mod-preview/<id>/merged`,
+keyed by a marker (id + version + preset + package hashes) so a repeat
+visit lists instantly, a new version or scheme restages, and at most the
+six newest entries plus the one just staged stay on disk. A delisted entry
+keeps serving its already-staged bytes (local-cache semantics) until
+pruned.
+`mod_catalog_list_assets` / `mod_catalog_read_asset` then serve the
+gallery (image grid) and the voice audition list (scene-titled `.wem`
+rows through the shared audio player) — the same classification, thumbs
+and transcodes as an installed unit. Video entries keep the standard
+preview clip only (staging a 50 MB+ pack to preview a clip the thread
+already ships would be waste), and function categories never stage.
+
 The pipeline is automated: `python scripts/mod_hub_preview_video.py encode --source <video> --slug <slug>` skips the leading black segment, encodes the clip and enforces the 3 MB / 20 s budget; `publish --file <clip> --slug <slug> --discussion <number>` uploads it as `preview-<slug>.mp4` and patches the thread's front matter plus its preview bullet (idempotent, `--dry-run` prints the patched body). The tool finds ffmpeg through `--ffmpeg`, the `FFMPEG` environment variable or `PATH`, and otherwise installs the pip-packaged `imageio-ffmpeg` wheel. Any tag on the release download tree works — the existing assets ride the `mod-hub` tag. The APP bundles no ffmpeg: previews play through the Tauri webview, and an external binary is only needed to produce clips or to import non-WebM video.
 
 #### Slug taxonomy (`category.genus.species`)

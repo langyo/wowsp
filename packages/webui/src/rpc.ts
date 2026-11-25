@@ -274,6 +274,12 @@ export const RPC = {
   mod_catalog_refresh: "mod_catalog_refresh",
   mod_catalog_install: "mod_catalog_install",
   mod_catalog_preview_files: "mod_catalog_preview_files",
+  // Catalog PAYLOAD previews: stage an entry's packages into a per-entry
+  // cache dir (mod-preview/<id>/merged), then list/read assets from it with
+  // the SAME classification and payloads the installed/layer panes use.
+  mod_catalog_stage_assets: "mod_catalog_stage_assets",
+  mod_catalog_list_assets: "mod_catalog_list_assets",
+  mod_catalog_read_asset: "mod_catalog_read_asset",
   mod_hub_reveal_path: "mod_hub_reveal_path",
   mod_catalog_uninstall: "mod_catalog_uninstall",
   mod_hub_records: "mod_hub_records",

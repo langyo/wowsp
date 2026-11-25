@@ -157,6 +157,7 @@ fn data_file(rel: &str) -> anyhow::Result<PathBuf> {
 // generate_handler registration, the test suite) keeps resolving through
 // the re-exports below.
 
+mod assets;
 mod extract;
 mod index;
 pub(crate) mod install;
@@ -220,6 +221,12 @@ pub(crate) use shared_records::{
 // The Tauri commands ride with their macro twins (same pattern as
 // `commands::pairing`'s re-export block) so the generate_handler
 // registration keeps resolving unchanged.
+pub use assets::{
+    __cmd__mod_catalog_list_assets, __cmd__mod_catalog_read_asset, __cmd__mod_catalog_stage_assets,
+    __tauri_command_name_mod_catalog_list_assets, __tauri_command_name_mod_catalog_read_asset,
+    __tauri_command_name_mod_catalog_stage_assets, mod_catalog_list_assets, mod_catalog_read_asset,
+    mod_catalog_stage_assets,
+};
 pub use index::{
     __cmd__mod_catalog_refresh, __tauri_command_name_mod_catalog_refresh, mod_catalog_refresh,
 };

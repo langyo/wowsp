@@ -62,6 +62,7 @@ import {
 } from "./display";
 import { commonRootDir, splitGameRootFiles } from "./fileTree";
 import { renderLayerDetail } from "./LayerStack";
+import { isStagedPreviewCat } from "./useModHub";
 import type { ResourcesCtx } from "./context";
 import type { TextureComponent } from "./types";
 
@@ -183,6 +184,90 @@ function revealUnit(ctx: ResourcesCtx, record: ModInstallRecord | null, relPath:
     record?.binVersion ?? "",
     relPath ||
       (record ? commonRootDir(splitGameRootFiles(record.files).resMods) : ""),
+  );
+}
+
+/** The online catalog pane's staged payload preview: material entries
+ *  (skins, UI reskins, voice packs, models) carry no previewable payload
+ *  until their packages are staged into the app's preview cache, so this
+ *  section gates the SAME AssetPreview facility the layer pane uses behind
+ *  an explicit download CTA — idle at the CTA, staging with the shared-bus
+ *  progress bar (keyed `preview:<id>`, the file-list window's channel),
+ *  ready at the catalog source's gallery/voice list, error at the standard
+ *  card with the CTA again. Video entries keep their play-gated standard
+ *  clip above; function categories never stage, and bundled /
+ *  empty-package entries have nothing to download. */
+function renderCatalogStagedPreview(ctx: ResourcesCtx, entry: CatalogEntry) {
+  if (!isStagedPreviewCat(entry.category) || entry.bundled || entry.packages.length === 0) {
+    return null;
+  }
+  const staged = ctx.catalogStaged.value.get(entry.id);
+  const audio = entry.category === "voice" || entry.category === "audio";
+  const progressEntry = ctx.progresses.value.get(`preview:${entry.id}`);
+  // The layer pane's section vocabulary labels the block: voice packs
+  // speak the audio pair, every other staged category the texture one.
+  const titleKey = audio
+    ? "resources.layers.audioTitle"
+    : "resources.layers.textureTitle";
+  const hintKey = audio
+    ? "resources.layers.audioHint"
+    : "resources.layers.textureHint";
+  const cta = (
+    <HkButton
+      size="sm"
+      variant="secondary"
+      loading={staged?.state === "staging"}
+      data-hint={t("resources.fileListPreviewSize", { kb: catalogKb(entry) })}
+      onClick={() => ctx.stageCatalogAssets(entry)}
+    >
+      {t("resources.previewStageCta")}
+    </HkButton>
+  );
+  return (
+    <div class="layer-detail__preview">
+      <span class="layer-detail__label">{t(titleKey)}</span>
+      <p class="mod-detail__hint">{t(hintKey)}</p>
+      {staged?.state === "ready" ? (
+        <AssetPreview
+          source="catalog"
+          catalogModId={entry.id}
+          catalogPreset={ctx.activePreset(entry)}
+          mode={audio ? "audio" : "image"}
+        />
+      ) : staged?.state === "error" ? (
+        <>
+          <ErrorCard error={staged.error ?? null} />
+          {cta}
+        </>
+      ) : (
+        <>
+          {cta}
+          {staged?.state === "staging" && (
+            <>
+              <p class="mod-detail__hint">{t("resources.fileListBuilding")}</p>
+              {/* The staged download rides the SAME progress-bar pattern
+                  as the install flow above (the backend emits its counters
+                  under the `preview:` key on the shared bus). */}
+              {progressEntry && (
+                <div class="mod-detail__progress">
+                  <div
+                    class="mod-detail__progress-bar"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        progressEntry.total > 0
+                          ? (progressEntry.received / progressEntry.total) * 100
+                          : 12,
+                      )}%`,
+                    }}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -415,6 +500,10 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
             objectFit="contain"
           />
         ) : null}
+        {/* Staged payload preview for the material categories — the same
+            content-then-meta order the layer pane uses: the section joins
+            the pane body's scroll flow before the meta row. */}
+        {renderCatalogStagedPreview(ctx, entry)}
         <div class="mod-detail__meta">
           <span>{t("resources.gameRange", { game: entry.game })}</span>
           {kb > 0 && (

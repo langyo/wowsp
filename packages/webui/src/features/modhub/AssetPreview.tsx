@@ -1,5 +1,6 @@
 /**
- * Installed-unit and managed-layer asset previews. The material section
+ * THE shared payload-preview facility for installed units, managed layers
+ * and staged catalog entries. The material section
  * (mode "texture") is ONE preview area for a pack's whole visual payload,
  * from a single asset listing: texture thumbnails render as a lazy grid
  * (each tile pulls a decoded, downscaled PNG data URL from the backend on
@@ -28,9 +29,16 @@
  * (`<data>/mods/layers/<safe(packId)>/<safe(version)>/files`) instead, so a
  * layer previews even while it is disabled or the stack is not rendered yet,
  * and voice/texture payloads — which the game tree only carries after a
- * render — can be listed at all. The layer store has no model-preview
- * command (the 3D expansion reads a game-tree path), so model files are
- * dropped from the usable set on that source.
+ * render — can be listed at all. "catalog" reads a catalog entry's STAGED
+ * payload (the mod-preview cache the pane fills with an explicit download
+ * action), so the online pane previews a pack before installing it; the
+ * backend gates list AND read on the staged scheme, so the entry's active
+ * preset rides along (catalogPreset) and a scheme switch re-lists. The
+ * layer store has no model-preview command (the 3D expansion reads a
+ * game-tree path), so model files are dropped from the usable set on that
+ * source; the staged catalog payload has neither a model-preview nor an
+ * absolute-path command (nothing on disk to point a player at), so video
+ * AND model files are dropped there.
  */
 import { defineComponent, ref, watch } from "vue";
 import { Box, Clapperboard, ImageIcon, Music, PlayCircle } from "@lucide/vue";
@@ -55,11 +63,14 @@ export default defineComponent({
   name: "AssetPreview",
   props: {
     /** Which store the preview reads from: an installed unit's rendered
-     *  res_mods tree ("installed", the default) or one managed layer's
-     *  app-data store ("layer"). The layer source previews a disabled or
-     *  not-yet-rendered pack, and covers video/voice/texture payloads alike. */
+     *  res_mods tree ("installed", the default), one managed layer's
+     *  app-data store ("layer") or a catalog entry's staged payload
+     *  ("catalog"). The layer source previews a disabled or
+     *  not-yet-rendered pack, and covers video/voice/texture payloads
+     *  alike; the catalog source previews the online pane's staged
+     *  material payloads before any install. */
     source: {
-      type: String as () => "installed" | "layer",
+      type: String as () => "installed" | "layer" | "catalog",
       default: "installed",
     },
     /** Installed source: the game install root. */
@@ -71,6 +82,13 @@ export default defineComponent({
      *  gameRoot/relPath are ignored by the layer one. */
     layerPackId: { type: String, default: "" },
     layerVersion: { type: String, default: "" },
+    /** Catalog source: the entry id that keys the staged payload cache.
+     *  Ignored by the other two sources, symmetrically. */
+    catalogModId: { type: String, default: "" },
+    /** Catalog source: the entry's active scheme — the backend compares it
+     *  against the staged marker on every list/read and answers a mismatch
+     *  with an error, so the pane falls back to its download CTA. */
+    catalogPreset: { type: String, default: "" },
     /** `texture` grid + model stage (one listing), `image` grid, `audio`
      *  list, `model` rows + 3D stage, or `video` inline players. */
     mode: {
@@ -122,19 +140,28 @@ export default defineComponent({
     // command and a layer-store twin, so the rest of the component never
     // branches on the source again.
     const isLayer = (): boolean => props.source === "layer";
+    const isCatalog = (): boolean => props.source === "catalog";
 
     function listAssets(): Promise<AssetFileInfo[]> {
-      return isLayer()
-        ? api.modHubLayerListAssets(props.layerPackId, props.layerVersion)
-        : api.modHubListAssets(props.gameRoot, props.relPath);
+      return isCatalog()
+        ? api.modCatalogListAssets(props.catalogModId, props.catalogPreset)
+        : isLayer()
+          ? api.modHubLayerListAssets(props.layerPackId, props.layerVersion)
+          : api.modHubListAssets(props.gameRoot, props.relPath);
     }
 
     function readAsset(rel: string): Promise<AssetPayload> {
-      return isLayer()
-        ? api.modHubLayerReadAsset(props.layerPackId, props.layerVersion, rel)
-        : api.modHubReadAsset(props.gameRoot, rel);
+      return isCatalog()
+        ? api.modCatalogReadAsset(props.catalogModId, props.catalogPreset, rel)
+        : isLayer()
+          ? api.modHubLayerReadAsset(props.layerPackId, props.layerVersion, rel)
+          : api.modHubReadAsset(props.gameRoot, rel);
     }
 
+    /** The catalog source has NO absolute-path command — a staged payload is
+     *  never streamed (video and model rows never survive its usable-set
+     *  filter), so the layer/installed routing below must not be reached
+     *  with an empty gameRoot. */
     function assetFilePath(rel: string): Promise<string> {
       return isLayer()
         ? api.modHubLayerAssetFilePath(props.layerPackId, props.layerVersion, rel)
@@ -149,9 +176,15 @@ export default defineComponent({
      *  row. Installed units keep the bare rel — unit-unique by construction
      *  and the pre-existing key shape. */
     function audioKey(rel: string): string {
-      return isLayer()
-        ? `layer:${props.layerPackId}@${props.layerVersion}/${rel}`
-        : rel;
+      // Catalog rels are staged-cache-relative: two entries routinely ship
+      // the same bank paths (and one entry's schemes restage the same
+      // paths with different bytes), so the track key is namespaced per
+      // entry + scheme the same way the layer source namespaces per pack.
+      return isCatalog()
+        ? `catalog:${catalogStoreKey()}/${rel}`
+        : isLayer()
+          ? `layer:${props.layerPackId}@${props.layerVersion}/${rel}`
+          : rel;
     }
 
     async function load() {
@@ -175,11 +208,19 @@ export default defineComponent({
       // a layer re-keys the caches. Installed units carry unit-unique rels,
       // so an installed→installed switch KEEPS them: re-decoding up to 24
       // tiles is a real IPC + placeholder-flash cost for no correctness win.
-      const nextCacheScope = isLayer()
-        ? `layer:${props.layerPackId}@${props.layerVersion}`
-        : `installed:${props.relPath}`;
-      const nextCacheRoot = isLayer() ? "" : props.gameRoot;
-      const touchedLayerStore = isLayer() || cacheScope.startsWith("layer:");
+      const nextCacheScope = isCatalog()
+        ? `catalog:${catalogStoreKey()}`
+        : isLayer()
+          ? `layer:${props.layerPackId}@${props.layerVersion}`
+          : `installed:${props.relPath}`;
+      const nextCacheRoot = isLayer() || isCatalog() ? "" : props.gameRoot;
+      // Any non-installed source switch re-keys the caches (store rels are
+      // store-relative), and so does a switch INTO one from another store.
+      const touchedLayerStore =
+        isLayer() ||
+        isCatalog() ||
+        cacheScope.startsWith("layer:") ||
+        cacheScope.startsWith("catalog:");
       // The same rel in ANOTHER install's tree resolves to another file, so
       // a root switch re-keys the caches exactly like a layer switch does.
       const rootChanged = nextCacheRoot !== cacheRoot;
@@ -202,6 +243,13 @@ export default defineComponent({
     }
     // A unit switch and a layer switch are the same event to this pane: the
     // source and the ids it keys join the installed root/path in the deps.
+    /** The catalog source's store identity: entry id + active scheme, so
+     *  a scheme switch re-lists (the backend answers per staged scheme)
+     *  and re-keys the thumbnail/audio caches. */
+    function catalogStoreKey(): string {
+      return `${props.catalogModId}${props.catalogPreset ? `@${props.catalogPreset}` : ""}`;
+    }
+
     watch(
       () => [
         props.source,
@@ -209,6 +257,8 @@ export default defineComponent({
         props.relPath,
         props.layerPackId,
         props.layerVersion,
+        props.catalogModId,
+        props.catalogPreset,
       ],
       load,
       { immediate: true },
@@ -232,6 +282,10 @@ export default defineComponent({
     // render as text rows (name + size), never as players — the duplicate
     // two-player preview was the bug this section exists to avoid.
     watch(files, (list) => {
+      // The catalog source never streams: its staged cache has no
+      // absolute-path command, so its listings never resolve a video (the
+      // usable-set filter drops the kind wholesale).
+      if (isCatalog()) return;
       const { primary } = pickPrimaryVideo(list.filter((f) => f.kind === "video"));
       if (primary) void ensureVideoUrl(primary.rel);
     });
@@ -439,11 +493,16 @@ export default defineComponent({
         );
       }
       const kinds = props.mode === "texture" ? ["image", "model"] : [props.mode];
-      // The layer store is not wired for model previews: the 3D expansion
-      // reads a game-tree path, so a mesh row could never load. Drop model
-      // files on that source (installed units keep listing them).
+      // Sources without the backing commands drop the kinds they could
+      // never render: the layer store has no model-preview command (the 3D
+      // expansion reads a game-tree path), and the staged catalog payload
+      // has neither a model-preview nor an absolute-path command, so its
+      // listings drop model AND video files. Installed units keep both.
       const usable = files.value.filter(
-        (f) => kinds.includes(f.kind) && !(isLayer() && f.kind === "model"),
+        (f) =>
+          kinds.includes(f.kind) &&
+          !(isLayer() && f.kind === "model") &&
+          !(isCatalog() && (f.kind === "model" || f.kind === "video")),
       );
       if (usable.length === 0) {
         // A titled section (the layer pane's preview block) explains its own

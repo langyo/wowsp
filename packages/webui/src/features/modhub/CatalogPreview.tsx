@@ -1,15 +1,20 @@
 /**
  * Catalog detail preview clip for an entry that publishes a standard
- * `preview_video` (thread front-matter): a poster tile with an explicit
- * play button. Nothing streams until the button is pressed — the player
- * element only mounts afterwards — and its poster is the entry's preview
- * image through the media proxy. The small format line under the media
+ * `preview_video` (thread front-matter): a play-gated clip on the SAME
+ * visual vocabulary as AssetPreview's installed/layer players (the
+ * asset-preview video card wraps hikari's player once started). Nothing
+ * streams until the play button is pressed — the player element only
+ * mounts afterwards — and its poster is the entry's preview image through
+ * the media proxy. The gate surface itself carries ONLY the play button:
+ * an entry without a poster keeps the bare dark gate (the standard line
+ * under the media already names the format), so no centered caption can
+ * collide with the centered button. The small format line under the media
  * states the standard the clip follows. Entries without a clip never mount
  * this component (their screenshot preview stays the DetailPane's own
  * HkImagePreview path).
  */
 import { defineComponent, ref } from "vue";
-import { Clapperboard, PlayCircle } from "@lucide/vue";
+import { PlayCircle } from "@lucide/vue";
 import { HkButton, HkMediaPlayer } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
@@ -33,26 +38,33 @@ export default defineComponent({
       return (
         <div class="catalog-preview">
           {started.value ? (
-            <HkMediaPlayer
-              src={props.videoSrc}
-              type="video"
-              poster={props.posterSrc || undefined}
-            />
+            // The started player rides the installed/layer panes' video
+            // card classes, so the catalog clip sizes and captions like
+            // every other inline player (the shared .asset-preview__video
+            // rule caps the player surface).
+            <div class="asset-preview__videos">
+              <figure class="asset-preview__video">
+                <HkMediaPlayer
+                  src={props.videoSrc}
+                  type="video"
+                  poster={props.posterSrc || undefined}
+                />
+              </figure>
+            </div>
           ) : (
             <div class="catalog-preview__gate">
-              {props.posterSrc ? (
+              {props.posterSrc && (
                 <img
                   class="catalog-preview__poster"
                   src={props.posterSrc}
                   alt={props.alt}
                   loading="lazy"
                 />
-              ) : (
-                <div class="catalog-preview__poster catalog-preview__poster--empty">
-                  <Clapperboard size={22} />
-                  <span>{t("resources.previewVideo.standard")}</span>
-                </div>
               )}
+              {/* The gate carries ONLY the play button — a posterless entry
+                  keeps the bare dark surface, and the standard line below
+                  the gate already names the format (the old centered
+                  Clapperboard caption collided with the centered button). */}
               <HkButton
                 size="sm"
                 variant="primary"

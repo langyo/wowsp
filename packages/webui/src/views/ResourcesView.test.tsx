@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   layerStack: vi.fn(), layerSetOrder: vi.fn(), layerSetEnabled: vi.fn(),
   layerRender: vi.fn(), layerPaths: vi.fn(),
   catalogInstall: vi.fn(), catalogUninstall: vi.fn(),
+  catalogStage: vi.fn(), catalogList: vi.fn(), catalogRead: vi.fn(),
   parkSkip: vi.fn(),
   syncOn: true,
   /* Running game processes (the multi-instance report). Empty by default;
@@ -47,6 +48,9 @@ vi.mock("@/api", () => ({ api: {
   modCatalogPreviewFiles: mocks.preview,
   modCatalogInstall: mocks.catalogInstall,
   modCatalogUninstall: mocks.catalogUninstall,
+  modCatalogStageAssets: mocks.catalogStage,
+  modCatalogListAssets: mocks.catalogList,
+  modCatalogReadAsset: mocks.catalogRead,
   modHubRecords: mocks.records, modTags: async () => ({ tags: [] }),
   modHubClientUsage: mocks.clientUsage,
   modHubLayerStack: mocks.layerStack,
@@ -112,7 +116,21 @@ vi.mock("@/stores/staleBins", () => ({ useStaleBinsStore: () => ({ adopt: mocks.
  * lives in the ARGUMENTS, not in the rendered key echo. */
 vi.mock("@/i18n", () => ({ t: vi.fn((key: string) => key) }));
 vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: "en" }, dataLanguage: { value: "en" } }) }));
-vi.mock("@/features/modhub/AssetPreview", () => ({ default: { name: "AssetPreview", render: () => null } }));
+vi.mock("@/features/modhub/AssetPreview", async () => {
+  const { defineComponent } = await import("vue");
+  return {
+    default: defineComponent({
+      name: "AssetPreview",
+      // Declared so the staged-preview assertions read the pane's
+      // source/mode contract straight off the stub (it renders null).
+      props: [
+        "source", "gameRoot", "relPath", "layerPackId", "layerVersion",
+        "catalogModId", "catalogPreset", "mode", "silentEmpty", "emptyNoteKey",
+      ],
+      render: () => null,
+    }),
+  };
+});
 vi.mock("@/components/search/AsyncSearchCombo", () => ({ default: { name: "AsyncSearchCombo", render: () => null } }));
 vi.mock("@celestia-island/hikari", () => {
   const component = (name: string) => ({
@@ -281,6 +299,11 @@ beforeEach(() => {
   mocks.cleanJunk.mockResolvedValue({ relPath: "PnFMods/test", removedFiles: 2 });
   mocks.clientUsage.mockResolvedValue({ totalBytes: 4096, files: 4, units: 2 });
   mocks.catalog.mockResolvedValue({ mods: [], sourceVersion: "test", fetchedAt: "" });
+  // The staged-payload probe: absent by default (the CTA state), so a
+  // staged-category pane never silently renders an empty gallery.
+  mocks.catalogList.mockRejectedValue(new Error("not staged"));
+  mocks.catalogStage.mockResolvedValue([]);
+  mocks.catalogRead.mockResolvedValue({ dataUrl: "" });
   mocks.purgeBackups.mockResolvedValue([]);
   mocks.layerStack.mockResolvedValue({
     layers: [], rendered: true, generation: 0, slotConflicts: [], gameVersion: null,
@@ -2061,5 +2084,206 @@ describe("catalog install scope buttons", () => {
     expect(warnClass("resources.installThisClientHint")).toContain(
       "mod-detail__action-warn",
     );
+  });
+});
+
+describe("catalog staged payload previews", () => {
+  /** Mount one catalog entry's detail pane (single row, clicked open).
+   *  The staged family lives in the beautify big category — the strip
+   *  switches before the row click (battle keeps the function default). */
+  const mountStagedEntry = async (
+    entry: Record<string, unknown>,
+    bigCat: "function" | "beautify" = "beautify",
+  ) => {
+    mocks.catalog.mockResolvedValue({
+      mods: [{
+        id: "staged-a", version: "1", nameEn: "Staged", game: "*",
+        title: "Staged", nameZh: "", description: "", authors: [],
+        packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+        i18n: {}, aliases: [],
+        ...entry,
+      }],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkMasterDetail: false, HkScrollContainer: false, AppTag: false, HkTag: false } },
+    });
+    await flushPromises();
+    view
+      .findAllComponents({ name: "HkTabs" })
+      .find((tabs) => tabs.props("modelValue") === "function")!
+      .vm.$emit("update:modelValue", bigCat);
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    return view;
+  };
+  /** The section's CTA — the mocked HkButton carrying the size hint (the
+   *  t mock echoes keys, so the hint doubles as the button's test id). */
+  const stageCta = (view: VueWrapper) =>
+    view
+      .findAllComponents({ name: "HkButton" })
+      .find((b) => (b.vm.$attrs as Record<string, unknown>)["data-hint"] === "resources.fileListPreviewSize");
+  const hasCta = (view: VueWrapper) => stageCta(view) !== undefined;
+
+  it("gates a voice entry's staged preview behind the download CTA", async () => {
+    mocks.catalogList.mockRejectedValue(new Error("not staged"));
+    const pending = deferred<unknown[]>();
+    mocks.catalogStage.mockReturnValueOnce(pending.promise);
+    const view = await mountStagedEntry({ id: "voice-a", category: "voice" });
+    // The selection probe classified the entry as staged-absent — the
+    // probe now carries the entry's active scheme for the backend gate.
+    expect(mocks.catalogList).toHaveBeenCalledExactlyOnceWith("voice-a", "");
+    const cta = stageCta(view);
+    expect(cta, "the CTA is the pane action carrying the size hint").toBeTruthy();
+    // Staging shows the building note before the answer lands.
+    (cta!.vm.$attrs as { onClick: () => void }).onClick();
+    await flushPromises();
+    expect(mocks.catalogStage).toHaveBeenCalledExactlyOnceWith("voice-a", "");
+    expect(
+      view.findAll(".mod-detail__hint").some((p) => p.text() === "resources.fileListBuilding"),
+    ).toBe(true);
+    pending.resolve([
+      { rel: "banks/mods/MyBank/line.wem", size: 10, kind: "audio", ext: "wem", playable: true },
+    ]);
+    await flushPromises();
+    // Ready flips the section onto the shared catalog-source preview —
+    // the voice list, not the gallery.
+    const preview = view.findComponent({ name: "AssetPreview" });
+    expect(preview.exists()).toBe(true);
+    expect(preview.props("source")).toBe("catalog");
+    expect(preview.props("catalogModId")).toBe("voice-a");
+    expect(preview.props("catalogPreset")).toBe("");
+    expect(preview.props("mode")).toBe("audio");
+  });
+
+  it("stages a ui entry to the image gallery and skips the CTA when staged", async () => {
+    mocks.catalogList.mockResolvedValue([
+      { rel: "gui/ribbon.png", size: 10, kind: "image", ext: "png", playable: false },
+    ]);
+    const view = await mountStagedEntry({ id: "ui-a", category: "ui" });
+    // The probe found the payload staged → the gallery mounts with no CTA.
+    const preview = view.findComponent({ name: "AssetPreview" });
+    expect(preview.exists()).toBe(true);
+    expect(preview.props("source")).toBe("catalog");
+    expect(preview.props("catalogModId")).toBe("ui-a");
+    expect(preview.props("catalogPreset")).toBe("");
+    expect(preview.props("mode")).toBe("image");
+    expect(hasCta(view)).toBe(false);
+    expect(mocks.catalogStage).not.toHaveBeenCalled();
+  });
+
+  it("leaves battle and video entries without a staging section", async () => {
+    const battle = await mountStagedEntry(
+      { id: "battle-a", category: "battle" },
+      "function",
+    );
+    expect(mocks.catalogList).not.toHaveBeenCalled();
+    expect(battle.findComponent({ name: "AssetPreview" }).exists()).toBe(false);
+    expect(battle.findComponent({ name: "CatalogPreviewMedia" }).exists()).toBe(false);
+    expect(hasCta(battle)).toBe(false);
+
+    // A video entry keeps the play-gated standard clip, still no staging.
+    const video = await mountStagedEntry({
+      id: "video-a", category: "video",
+      previewVideo: "https://hub.example/clip.mp4",
+    });
+    expect(mocks.catalogList).not.toHaveBeenCalled();
+    expect(video.findComponent({ name: "CatalogPreviewMedia" }).exists()).toBe(true);
+    expect(video.findComponent({ name: "AssetPreview" }).exists()).toBe(false);
+    expect(hasCta(video)).toBe(false);
+  });
+
+  it("shows the error card with the CTA again when staging fails, then recovers", async () => {
+    mocks.catalogList.mockRejectedValue(new Error("not staged"));
+    mocks.catalogStage
+      .mockRejectedValueOnce(new Error("mirror 503"))
+      .mockResolvedValueOnce([
+        { rel: "gui/ribbon.png", size: 10, kind: "image", ext: "png", playable: false },
+      ]);
+    const view = await mountStagedEntry({ id: "skin-a", category: "skin" });
+    const cta = () => stageCta(view)!;
+    (cta().vm.$attrs as { onClick: () => void }).onClick();
+    await flushPromises();
+    // The failure parks the section on the standard error card — the raw
+    // backend message rides the card — and the CTA seats again for retry.
+    const card = view.findComponent({ name: "ErrorCard" });
+    expect(card.exists()).toBe(true);
+    expect(card.props("error")).toBe("mirror 503");
+    expect(hasCta(view), "the CTA returns beside the error card").toBe(true);
+    // The retry (the same CTA) succeeds → the gallery mounts, card gone.
+    (cta().vm.$attrs as { onClick: () => void }).onClick();
+    await flushPromises();
+    expect(mocks.catalogStage).toHaveBeenCalledTimes(2);
+    expect(view.findComponent({ name: "ErrorCard" }).exists()).toBe(false);
+    expect(view.findComponent({ name: "AssetPreview" }).props("mode")).toBe("image");
+  });
+
+  it("flips a staged entry back to the CTA on a scheme switch", async () => {
+    // The staged marker carries the "classic" scheme: the probe answers
+    // per scheme, so switching to the other scheme lands on the mismatch
+    // error (idle) and the CTA — no state beyond the map needed.
+    mocks.catalogList.mockImplementation(
+      (_id: string, preset: string | null | undefined) =>
+        (preset ?? "") === "classic"
+          ? Promise.resolve([
+              { rel: "gui/ribbon.png", size: 10, kind: "image", ext: "png", playable: false },
+            ])
+          : Promise.reject(new Error("staged for another scheme")),
+    );
+    mocks.catalogStage.mockResolvedValue([]);
+    const view = await mountStagedEntry({
+      id: "ui-b", category: "ui",
+      presets: [
+        { id: "classic", nameZh: "", nameEn: "Classic", packages: [] },
+        { id: "alt", nameZh: "", nameEn: "Alt", packages: [] },
+      ],
+    });
+    // Opened on the default (first) scheme: staged → gallery, no CTA.
+    const preview = () => view.findComponent({ name: "AssetPreview" });
+    expect(preview().exists()).toBe(true);
+    expect(preview().props("catalogPreset")).toBe("classic");
+    expect(hasCta(view)).toBe(false);
+    // Switch schemes → the probe re-answers "not staged for alt" → CTA.
+    const presetTabs = () =>
+      view
+        .findAllComponents({ name: "HkTabs" })
+        .find((c) =>
+          (c.props("tabs") as { key: string }[] | undefined)?.some(
+            (tab) => tab.key === "alt",
+          ),
+        )!;
+    presetTabs().vm.$emit("update:modelValue", "alt");
+    await flushPromises();
+    expect(mocks.catalogList).toHaveBeenLastCalledWith("ui-b", "alt");
+    expect(preview().exists()).toBe(false);
+    expect(hasCta(view), "the CTA returns for the unstaged scheme").toBe(true);
+    // Back to the staged scheme → ready again with no second download.
+    presetTabs().vm.$emit("update:modelValue", "classic");
+    await flushPromises();
+    expect(preview().exists()).toBe(true);
+    expect(preview().props("catalogPreset")).toBe("classic");
+    expect(mocks.catalogStage).not.toHaveBeenCalled();
+  });
+
+  it("re-probes the open entry when the catalog index refreshes", async () => {
+    mocks.catalogList.mockResolvedValue([
+      { rel: "gui/ribbon.png", size: 10, kind: "image", ext: "png", playable: false },
+    ]);
+    const view = await mountStagedEntry({ id: "ui-c", category: "ui" });
+    expect(view.findComponent({ name: "AssetPreview" }).exists()).toBe(true);
+    // A header refresh reloads the index, invalidates the staged map and
+    // re-probes the OPEN entry so the pane keeps telling the truth.
+    const callCount = mocks.catalogList.mock.calls.length;
+    const refreshBtn = view
+      .findAllComponents({ name: "HkIconButton" })
+      .find((b) => (b.vm.$attrs as Record<string, unknown>)["data-hint"] === "resources.refresh")!;
+    refreshBtn.vm.$emit("click");
+    await flushPromises();
+    expect(mocks.catalog).toHaveBeenCalledWith(true);
+    expect(mocks.catalogList.mock.calls.length).toBeGreaterThan(callCount);
+    expect(mocks.catalogList).toHaveBeenLastCalledWith("ui-c", "");
+    expect(view.findComponent({ name: "AssetPreview" }).exists()).toBe(true);
   });
 });

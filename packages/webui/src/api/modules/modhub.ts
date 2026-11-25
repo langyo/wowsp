@@ -956,6 +956,31 @@ export const modHubApi = {
       gameRoot,
       preset: preset ?? null,
     }),
+  // Stage an entry's packages into the per-entry payload cache (downloads
+  // through the same mirror ladder + pkg cache an install uses; progress
+  // rides preview:<id>) and return its previewable assets. Heavy — the pane
+  // gates it behind an explicit download action.
+  modCatalogStageAssets: (modId: string, preset?: string | null) =>
+    transport.invoke<AssetFileInfo[]>(RPC.mod_catalog_stage_assets, {
+      modId,
+      preset: preset ?? null,
+    }),
+  // List the staged payload's previewable assets for the asked-for scheme
+  // (local listing only — errors when the entry has not been staged, or was
+  // staged for another scheme, so the pane offers its download again).
+  modCatalogListAssets: (modId: string, preset?: string | null) =>
+    transport.invoke<AssetFileInfo[]>(RPC.mod_catalog_list_assets, {
+      modId,
+      preset: preset ?? null,
+    }),
+  // One staged payload asset as a browser-ready payload (image thumbnail /
+  // audio data URL incl. the .wem transcode); the scheme gate matches list.
+  modCatalogReadAsset: (modId: string, preset: string | null | undefined, relPath: string) =>
+    transport.invoke<AssetPayload>(RPC.mod_catalog_read_asset, {
+      modId,
+      preset: preset ?? null,
+      relPath,
+    }),
   /** Open a unit's folder (`bin/<version>/res_mods[/rel]`) in the OS file
    *  manager; an empty binVersion resolves to the client's current one. */
   modHubRevealPath: (gameRoot: string, binVersion: string, relPath?: string) =>
