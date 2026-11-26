@@ -864,6 +864,7 @@
     "variantTop": "顶配",
     "requiresModule": "所需前置模块",
     "creditsHint": "研发所需银币",
+    "creditsNeeded": "需要银币",
     "gameparamsMissing": "GameParams 模块数据尚未加载。",
     "role": {
       "hull": "船体",

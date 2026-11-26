@@ -864,6 +864,7 @@
     "variantTop": "Sommet",
     "requiresModule": "Module requis",
     "creditsHint": "Crédits de recherche",
+    "creditsNeeded": "Crédits requis",
     "gameparamsMissing": "Les données de modules GameParams ne sont pas chargées.",
     "role": {
       "hull": "Coque",

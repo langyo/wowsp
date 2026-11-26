@@ -864,6 +864,7 @@
     "variantTop": "최종",
     "requiresModule": "필요 선행 모듈",
     "creditsHint": "연구에 필요한 크레딧",
+    "creditsNeeded": "크레딧 필요",
     "gameparamsMissing": "GameParams 모듈 데이터가 로드되지 않았습니다.",
     "role": {
       "hull": "선체",

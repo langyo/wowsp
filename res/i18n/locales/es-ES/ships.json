@@ -864,6 +864,7 @@
     "variantTop": "Superior",
     "requiresModule": "Módulo requerido",
     "creditsHint": "Créditos de investigación",
+    "creditsNeeded": "Créditos necesarios",
     "gameparamsMissing": "Los datos de módulos de GameParams no están cargados.",
     "role": {
       "hull": "Casco",

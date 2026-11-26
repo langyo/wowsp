@@ -864,6 +864,7 @@
     "variantTop": "Топовый",
     "requiresModule": "Требуется модуль",
     "creditsHint": "Серебро для исследований",
+    "creditsNeeded": "Требуется серебра",
     "gameparamsMissing": "Данные модулей GameParams не загружены.",
     "role": {
       "hull": "Корпус",

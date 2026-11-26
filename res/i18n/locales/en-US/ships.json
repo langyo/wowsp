@@ -864,6 +864,7 @@
     "variantTop": "Top",
     "requiresModule": "Requires module",
     "creditsHint": "Research credits",
+    "creditsNeeded": "Credits needed",
     "gameparamsMissing": "GameParams module data is not loaded.",
     "role": {
       "hull": "Hull",

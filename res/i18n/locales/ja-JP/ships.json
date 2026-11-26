@@ -864,6 +864,7 @@
     "variantTop": "最終",
     "requiresModule": "必要な前段モジュール",
     "creditsHint": "研究に必要なクレジット",
+    "creditsNeeded": "必要クレジット",
     "gameparamsMissing": "GameParams のモジュールデータが読み込まれていません。",
     "role": {
       "hull": "船体",

@@ -864,6 +864,7 @@
     "variantTop": "頂配",
     "requiresModule": "所需前置模組",
     "creditsHint": "研發所需銀幣",
+    "creditsNeeded": "需要銀幣",
     "gameparamsMissing": "GameParams 模組資料尚未載入。",
     "role": {
       "hull": "船體",

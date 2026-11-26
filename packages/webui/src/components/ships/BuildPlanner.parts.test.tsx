@@ -205,9 +205,22 @@ describe("BuildPlanner 装备选择 panel", () => {
     expect(wrapper.findAll(".planner-v__parts-tile")).toHaveLength(8);
     const credits = wrapper.findAll(".planner-v__parts-credits");
     expect(credits).toHaveLength(3);
-    // The buy-credit figures come from the server price-catalog capture: an
-    // em dash until the bundle carries them, a grouped number afterwards.
-    for (const credit of credits) expect(credit.text()).toMatch(/^(—|\d[\d,]*)$/);
+    // The buy-credit figures come from the server price-catalog capture: a
+    // muted localized label over the bare value — an em dash until a realm's
+    // catalog lands, a grouped number afterwards (i18n is stubbed, so the
+    // label renders as its raw key here).
+    for (const credit of credits) {
+      expect(credit.find(".planner-v__parts-credits-label").text()).toBe(
+        "ships.parts.creditsNeeded",
+      );
+      expect(credit.find(".planner-v__parts-credits-value").text()).toMatch(/^(—|\d[\d,]*)$/);
+    }
+    // Tiles read by role glyph + caption; the column letter rides the
+    // top-left corner chip (one per tile, A first).
+    expect(wrapper.findAll(".planner-v__parts-tile .planner-v__parts-icon")).toHaveLength(8);
+    const letters = wrapper.findAll(".planner-v__parts-letter");
+    expect(letters).toHaveLength(8);
+    expect(letters[0].text()).toBe("A");
     // The hull stock anchor is the GameParams stock module.
     const hullCells = rows[0].findAll(".planner-v__parts-cell");
     expect(hullCells[0].attributes("data-module")).toBe("PRUH603_D7_HULL_STOCK_2");

@@ -8,7 +8,31 @@ import {
   type Component,
   type PropType,
 } from "vue";
-import { AlertTriangle, Ban, Coins, Lock, RotateCcw, Wrench, X } from "@lucide/vue";
+import {
+  AlertTriangle,
+  AudioWaveform,
+  Ban,
+  Binoculars,
+  Bomb,
+  Coins,
+  Compass,
+  Crosshair,
+  Gauge,
+  LocateFixed,
+  Lock,
+  Navigation,
+  Paintbrush,
+  Plane,
+  Radar,
+  RotateCcw,
+  Shield,
+  Ship,
+  Target,
+  Telescope,
+  WavesHorizontal,
+  Wrench,
+  X,
+} from "@lucide/vue";
 
 import { HkButton, HkPopover, HkScrollContainer, HkTabs } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
@@ -265,6 +289,39 @@ function hasMsg(key: string): boolean {
   // te() on the full message schema explodes type instantiation — go loose.
   return (i18n.global as { te: (k: string) => boolean }).te(key);
 }
+
+/** Per-role lucide glyph of one equipment-chain tile: the tile shows the
+ *  equipment KIND (a hull for hull, a reticle for artillery, ...) instead of
+ *  the bare A/B column letter — the letter shrinks into a corner chip. Keys
+ *  are the normalized row roles; an unknown role falls back to the neutral
+ *  Wrench (the rail glyph this section already uses). WavesHorizontal is
+ *  this @lucide/vue version's name for the classic "waves" glyph (it is
+ *  listed under the "waves" alias; a plain Waves export does not exist). */
+const PARTS_ROLE_ICONS: Record<string, Component> = {
+  hull: Ship,
+  suo: LocateFixed,
+  firecontrol: LocateFixed,
+  artillery: Crosshair,
+  atba: Target,
+  torpedoes: WavesHorizontal,
+  depthcharges: Bomb,
+  airdefense: Shield,
+  airarmament: Plane,
+  fighter: Plane,
+  torpedobomber: Plane,
+  divebomber: Plane,
+  skipbomber: Plane,
+  airsupport: Telescope,
+  pinger: AudioWaveform,
+  sonar: AudioWaveform,
+  radars: Radar,
+  directors: Compass,
+  finders: Binoculars,
+  engine: Gauge,
+  flightcontrol: Navigation,
+  specials: Wrench,
+  visualcustomizations: Paintbrush,
+};
 
 type Section = "parts" | "skills" | "captains" | "flags" | "upgrades" | "costs";
 
@@ -1481,6 +1538,9 @@ export default defineComponent({
         cell.step.credits == null
           ? t("ships.parts.creditsHint")
           : credits + " " + t("ships.skills.costCredits");
+      // The glyph names the equipment KIND; the column letter rides the
+      // corner chip (parallel variants of one column share it).
+      const RoleIcon = PARTS_ROLE_ICONS[row.role] ?? Wrench;
       return (
         <div
           class="planner-v__parts-cell"
@@ -1500,13 +1560,21 @@ export default defineComponent({
             data-hint-pos="top"
           >
             <span class="planner-v__parts-letter">{cell.variant}</span>
+            {/* h() not JSX: a Component-typed value is not a JSX element type. */}
+            {h(RoleIcon, { size: 20, class: "planner-v__parts-icon" })}
             <span class="planner-v__parts-role">
               {hullStock ? t("ships.parts.stockHull") : partsRoleLabel(row.role)}
             </span>
           </div>
+          {/* Researched tiles carry a two-line credits stack: the muted
+              label names the currency, the number below it stays the bare
+              value (an em dash while a realm's price catalog is missing). */}
           {cell.column > 0 ? (
             <span class="planner-v__parts-credits" data-hint={creditHint}>
-              {credits}
+              <span class="planner-v__parts-credits-label">
+                {t("ships.parts.creditsNeeded")}
+              </span>
+              <span class="planner-v__parts-credits-value">{credits}</span>
             </span>
           ) : null}
         </div>
