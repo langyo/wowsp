@@ -12,8 +12,25 @@ import { t } from "@/i18n";
  *  toasts (the first occurrence carries the diagnosis). */
 const seen = new Set<string>();
 
+/** Browser-internal resize-loop notices, not app failures: an observer
+ *  callback resized content after the frame was painted and the engine
+ *  dropped the delivery — a benign layout race with no user-actionable
+ *  failure and no app state change. Both engine spellings are matched
+ *  (Chromium/WebView2 and the older Firefox wording). Observed on
+ *  ship-detail 装备选择 switches 2026-11: the tooltip chrome (popupChrome)
+ *  legitimately resizes while the modal remounts, so every ship switch
+ *  raised the error toast for nothing. */
+const BENIGN_RESIZE_LOOP =
+  /ResizeObserver loop (completed with undelivered notifications|limit exceeded)/;
+
 export function reportUiError(message: string, stack?: string) {
   const text = message || "unknown UI error";
+  if (BENIGN_RESIZE_LOOP.test(text)) {
+    // Dev-console breadcrumb only — no app log, no toast.
+    // eslint-disable-next-line no-console
+    console.debug("[wowsp] swallowed benign ResizeObserver loop notice:", text);
+    return;
+  }
   // eslint-disable-next-line no-console
   console.error("[wowsp] UI error:", text, stack ?? "");
   void api.logUiError(text, stack);
