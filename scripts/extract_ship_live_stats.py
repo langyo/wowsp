@@ -329,6 +329,63 @@ def collect_torp_range(
     return round(best / 1000.0, 1)
 
 
+def variant_hull_blocks(gp: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """The hull component blocks a per-variant stat read must use, or None
+
+    None = a normal ship (ONE base `_Hull` upgrade): the legacy widest-fit
+    `A|B|C|AB_Hull` key walk stands. A ship shipping SEVERAL base `_Hull`
+    upgrades whose `prev` is empty has no research chain at all — those are
+    PARALLEL loadout variants of one hull (collaboration/event ships: the
+    Bermuda Triangle 远征者 PXSC999_Siegfried_1510 ships five, 7-16.5 km
+    concealment apart) — and a per-field max across their hulls would bake
+    one ship out of five that never coexist. Such ships read the FIRST
+    variant in ShipUpgradeInfo order (the stock/canonical one) and its OWN
+    chain: the base hull component plus the components named by the
+    `_TIER2`/`_TIER3` upgrades hanging off it via `prev` — the same
+    top-configuration convention as every other field, scoped to one
+    variant. The per-player replay surfaces (entityShipVariant.ts) resolve
+    the ACTUAL mounted variant off the decoded build units instead.
+    """
+    info = gp.get("ShipUpgradeInfo")
+    if not isinstance(info, dict):
+        return None
+    roots = [
+        name
+        for name, ent in info.items()
+        if isinstance(ent, dict)
+        and ent.get("ucType") == "_Hull"
+        and not ent.get("prev")
+    ]
+    if len(roots) <= 1:
+        return None
+    # The first variant's prev-chain: base upgrade, then every _TIER2/
+    # _TIER3 upgrade hanging off it (a plain prev→children walk).
+    children: dict[str, list[str]] = {}
+    for name, ent in info.items():
+        if not isinstance(ent, dict) or ent.get("ucType") != "_Hull":
+            continue
+        prev = ent.get("prev")
+        if isinstance(prev, str) and prev:
+            children.setdefault(prev, []).append(name)
+    chain = [roots[0]]
+    idx = 0
+    while idx < len(chain):
+        chain.extend(children.get(chain[idx], ()))
+        idx += 1
+    blocks: list[dict[str, Any]] = []
+    for name in chain:
+        ent = info.get(name)
+        comps = ent.get("components") if isinstance(ent, dict) else None
+        refs = comps.get("hull") if isinstance(comps, dict) else None
+        if not isinstance(refs, list):
+            continue
+        for ref in refs:
+            block = gp.get(ref) if isinstance(ref, str) else None
+            if isinstance(block, dict):
+                blocks.append(block)
+    return blocks
+
+
 def collect_gameparams_fallback(
     gp: dict[str, Any], ammo_ranges: dict[str, float]
 ) -> dict[str, Any]:
@@ -377,9 +434,20 @@ def collect_gameparams_fallback(
         out["sec"] = round(sec / 1000.0, 1)
 
     hp = speed = det = det_air = 0.0
-    for key, block in gp.items():
-        if not re.match(r"^(?:A|B|C|AB)_Hull$", key) or not isinstance(block, dict):
-            continue
+    variant_hulls = variant_hull_blocks(gp)
+    if variant_hulls is not None:
+        # Parallel event variants: every value reads the FIRST variant's own
+        # chain — a per-field max across all variants would franken-merge
+        # hulls that never coexist (the PXSC999 event ships shipped one
+        # shipId with five hulls: det from B, hp from A, spd from C).
+        hull_blocks: list[dict[str, Any]] = list(variant_hulls)
+    else:
+        hull_blocks = [
+            block
+            for key, block in gp.items()
+            if re.match(r"^(?:A|B|C|AB)_Hull$", key) and isinstance(block, dict)
+        ]
+    for block in hull_blocks:
         for field, slot in (("health", "hp"), ("maxSpeed", "spd")):
             v = num(block.get(field))
             if v is not None:

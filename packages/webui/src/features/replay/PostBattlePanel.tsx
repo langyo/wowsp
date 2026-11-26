@@ -1657,6 +1657,7 @@ export default defineComponent({
                       shipId={p.shipId}
                       ally={!enemy}
                       build={enemy ? null : buildOf(p.name, p.shipId)}
+                      playerName={p.name}
                     />
                   ) : null}
                 </span>

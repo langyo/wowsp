@@ -89,10 +89,16 @@ export interface RangeRingDef {
  *  sources simply drop out (a BB yields no torpedo ring, a no-radar ship
  *  no radar ring). Order follows RING_KINDS for stable stacking. `branch`
  *  names the recorded replay's client — the radar/hydro radii differ per
- *  realm, so a Lesta replay must quote Lesta's kit. */
+ *  realm, so a Lesta replay must quote Lesta's kit.
+ *
+ *  `variant` is the per-player hull-variant override (entityShipVariant.ts,
+ *  event ships): when present its concealment replaces the bake's — the
+ *  recorded player's ACTUAL hull detects at its own distance, not the
+ *  shipId-level bake's one-size guess. */
 export function resolveSelfRings(
   shipId: number | string | null | undefined,
   branch: ShipDataBranch = "wg",
+  variant?: { det?: number } | null,
 ): RangeRingDef[] {
   if (shipId == null) return [];
   const key = String(shipId);
@@ -106,7 +112,7 @@ export function resolveSelfRings(
   put("main", km(stats?.main));
   put("secondary", km(stats?.sec));
   put("torpedo", km(stats?.torp));
-  put("detect", km(stats?.det));
+  put("detect", km(variant?.det ?? stats?.det));
   const aaFar = stats?.aa
     ? Math.max(
         ...[stats.aa.near?.r, stats.aa.medium?.r, stats.aa.far?.r].map((r) =>

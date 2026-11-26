@@ -13,11 +13,20 @@ import { mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
 import { nextTick } from "vue";
 
+import { flushPromises } from "@vue/test-utils";
+
 import type { PlayerBuild } from "@/api";
 import { initLocaleMessages, setLocale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import LiveShipMeta from "./LiveShipMeta";
 import { playerBuildView } from "./playerBuild";
+import {
+  registerEntityShipVariants,
+  resetEntityShipVariantsForTests,
+} from "./entityShipVariant";
+
+const apiMocks = vi.hoisted(() => ({ getShipGameparams: vi.fn() }));
+vi.mock("@/api", () => ({ api: { getShipGameparams: apiMocks.getShipGameparams } }));
 
 const KITAKAZE: PlayerBuild = {
   entityId: 677453,
@@ -44,6 +53,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  apiMocks.getShipGameparams.mockReset();
+  resetEntityShipVariantsForTests();
 });
 
 afterEach(() => {
@@ -128,6 +139,58 @@ describe("LiveShipMeta build card", () => {
     await nextTick();
     await nextTick();
     expect(cardPanel()).toBeNull();
+    wrapper.unmount();
+  });
+});
+
+describe("LiveShipMeta per-player hull variant", () => {
+  // The Bermuda Triangle event ship: one shipId, five parallel hulls. The
+  // synthetic slice carries the verified C-hull numbers (7 km concealment,
+  // 30700 hp) against the bake's first-variant record (15 km, 73000 hp).
+  const SLICE = {
+    ShipUpgradeInfo: {
+      PXUH803_HULL_C: { ucType: "_Hull", prev: "", components: { hull: ["C_Hull"] } },
+    },
+    C_Hull: { visibilityFactor: 7, visibilityFactorByPlane: 7, health: 30700, maxSpeed: 48 },
+  };
+  const EVENT_SHIP_ID = 3247355152;
+  const C_HULL_ID = 3452710160;
+
+  it("replaces the bake fields with the player's actual hull", async () => {
+    apiMocks.getShipGameparams.mockResolvedValue(SLICE);
+    registerEntityShipVariants(
+      [{ entityId: 1, shipParamsId: EVENT_SHIP_ID, name: "VariantRider", units: [C_HULL_ID] }],
+      "",
+      "wg",
+    );
+    await flushPromises();
+    const wrapper = mount(
+      LiveShipMeta,
+      {
+        props: { shipId: EVENT_SHIP_ID, ally: true, build: null, playerName: "VariantRider" },
+        global: { plugins: [createPinia()] },
+      },
+    );
+    await nextTick();
+    // The inline chips show the override's 7 km concealment, not the bake's 15.
+    const chips = wrapper.findAll(".live-ship-meta__chip-value").map((c) => c.text());
+    expect(chips).toContain("7km");
+    expect(chips).not.toContain("15km");
+    wrapper.unmount();
+  });
+
+  it("keeps the shipId-level bake without a resolved variant", async () => {
+    const wrapper = mount(
+      LiveShipMeta,
+      {
+        props: { shipId: EVENT_SHIP_ID, ally: true, build: null, playerName: "Nobody" },
+        global: { plugins: [createPinia()] },
+      },
+    );
+    await nextTick();
+    const chips = wrapper.findAll(".live-ship-meta__chip-value").map((c) => c.text());
+    expect(chips).toContain("15km");
+    expect(chips).not.toContain("7km");
     wrapper.unmount();
   });
 });

@@ -52,6 +52,10 @@ import {
   tierRoman,
 } from "@/features/replay/shipLiveStats";
 import {
+  entityShipVariantEpoch,
+  entityShipVariantFor,
+} from "@/features/replay/entityShipVariant";
+import {
   nationNameFromDb,
   shipOfflineEntry,
   shipNameFromModelDb,
@@ -202,7 +206,17 @@ export default defineComponent({
     );
 
     // ── Standard loadout + specs (baked ship capabilities) ────────────────
-    const liveStats = computed(() => shipLiveStats(props.vehicle.shipId));
+    // Per-player hull variant first (event ships mounting several hulls of
+    // one shipId — entityShipVariant.ts): the resolved override replaces the
+    // matching bake fields (det/detAir/hp/spd); a player whose variant did
+    // not resolve keeps the shipId-level bake. The epoch read tracks the
+    // async registrations.
+    const liveStats = computed(() => {
+      void entityShipVariantEpoch.value;
+      const base = shipLiveStats(props.vehicle.shipId);
+      const override = entityShipVariantFor(props.vehicle.id, props.vehicle.name);
+      return override ? { ...base, ...override } : base;
+    });
     // Cruisers read CA vs CL from the baked main-gun caliber (fallback CA).
     const typeCode = computed(() =>
       shipTypeShort(shipType.value, liveStats.value?.cal),
