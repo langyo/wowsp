@@ -44,6 +44,11 @@ import {
 } from "@/features/holographic/modelLoader";
 import { runtimeShipEpoch } from "./runtimeShipIdentity";
 import {
+  entityShipVariantFor,
+  entityShipVariantEpoch,
+  type EntityShipVariantOverride,
+} from "./entityShipVariant";
+import {
   formatShipParams,
   formatShipSpecGroups,
   isBadgeConsumable,
@@ -92,6 +97,10 @@ export default defineComponent({
     /** The player's decoded loadout view (playerBuild.ts), ally rows only.
      *  Null keeps the card spec-only and its original width. */
     build: { type: Object as () => PlayerBuildView | null, default: null },
+    /** The row's player name — the per-player hull-variant override's
+     *  lookup key (entityShipVariant.ts; event ships mounting several
+     *  hull variants of one shipId). Null keeps the shipId-level stats. */
+    playerName: { type: String, default: null },
   },
   setup(props) {
     const { dataLanguage } = useLanguage();
@@ -103,7 +112,20 @@ export default defineComponent({
       void runtimeShipEpoch.value;
       return shipOfflineEntry(props.shipId);
     });
-    const stats = computed(() => shipLiveStats(props.shipId));
+    // Per-player hull variant (event ships): the resolved override replaces
+    // the matching shipId-level bake fields (det/detAir/hp/spd); an entity
+    // whose variant did not resolve keeps the bake untouched. The epoch read
+    // tracks the async registrations the same way runtimeShipEpoch does.
+    const variantOverride = computed<EntityShipVariantOverride | null>(() => {
+      void entityShipVariantEpoch.value;
+      return entityShipVariantFor(null, props.playerName);
+    });
+    const stats = computed(() => {
+      const base = shipLiveStats(props.shipId);
+      const override = variantOverride.value;
+      if (!override) return base;
+      return { ...base, ...override };
+    });
     const tier = computed(() => tierRoman(entry.value?.tier ?? null));
     // Cruisers read CA vs CL from the baked main-gun caliber (fallback CA).
     const typeShort = computed(() =>

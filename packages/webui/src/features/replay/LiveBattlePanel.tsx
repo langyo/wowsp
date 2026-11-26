@@ -162,6 +162,10 @@ import StampTag from "@/components/base/StampTag";
 import DivisionTag from "@/components/base/DivisionTag";
 import { HkSpinner } from "@celestia-island/hikari";
 import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
+import {
+  registerEntityShipVariants,
+  resetEntityShipVariants,
+} from "./entityShipVariant";
 import "./LiveBattlePanel.scss";
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
@@ -349,6 +353,36 @@ export default defineComponent({
       },
       { immediate: true },
     );
+    // Per-player hull variants (event ships, entityShipVariant.ts): resolve
+    // every ally's actual hull off the ship's GameParams slice once the
+    // decoded builds land — replay snapshot and probe frames alike
+    // (fire-and-forget, deduped per shipId; failures keep the bake).
+    watch(
+      [() => liveBuilds.replayBuilds, () => liveBuilds.probeBuilds],
+      ([replay, probe]) => {
+        registerEntityShipVariants(
+          [...replay, ...(liveBuilds.probeLive() ? [...probe.values()] : [])],
+          gameRoot.value,
+          dataBranch.value,
+        );
+      },
+      { immediate: true },
+    );
+    // A new battle reuses entity ids and names — drop the previous
+    // battle's per-player hull overrides so a late/failed decode can
+    // never keep showing them (then re-register whatever is in hand).
+    watch(() => liveBuilds.battle, (stamp, prev) => {
+      if (stamp === prev) return;
+      resetEntityShipVariants();
+      registerEntityShipVariants(
+        [
+          ...liveBuilds.replayBuilds,
+          ...(liveBuilds.probeLive() ? [...liveBuilds.probeBuilds.values()] : []),
+        ],
+        gameRoot.value,
+        dataBranch.value,
+      );
+    });
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
     );
@@ -1616,6 +1650,7 @@ export default defineComponent({
                   shipId={v.shipId}
                   ally={v.relation <= 1}
                   build={buildViewFor(v)}
+                  playerName={v.name}
                 />
               ) : null}
             </span>

@@ -41,6 +41,24 @@ describe("resolveSelfRings", () => {
     expect(resolveSelfRings(999999999999)).toEqual([]);
   });
 
+  it("rides the per-player hull-variant override for the detect ring", () => {
+    // Event ships: one shipId, several parallel hulls — the recorded
+    // player's ACTUAL hull concealment (7 km, PXSC999 C hull) replaces
+    // the bake's 15.8 km guess; the other kinds stay on the bake.
+    const stock = new Map(resolveSelfRings(3267278288).map((r) => [r.kind, r.meters]));
+    const rings = new Map(
+      resolveSelfRings(3267278288, "wg", { det: 7 }).map((r) => [r.kind, r.meters]),
+    );
+    expect(rings.get("detect")).toBe(7000);
+    expect(rings.get("main")).toBe(stock.get("main"));
+    expect(rings.get("radar")).toBe(stock.get("radar"));
+    // An override without a concealment value falls back to the bake.
+    const partial = new Map(
+      resolveSelfRings(3267278288, "wg", {}).map((r) => [r.kind, r.meters]),
+    );
+    expect(partial.get("detect")).toBe(stock.get("detect"));
+  });
+
   it("quotes the replay client's own radar/hydro radii per branch", () => {
     // 4179539280 is a shared hull whose kits diverge: WG radar 9 km /
     // hydro 3 km, Lesta radar 10 km / hydro 5 km — a replay must show its

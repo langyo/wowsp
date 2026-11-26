@@ -207,6 +207,10 @@ import {
   updateRangeRings,
   type RangeRingDef,
 } from "./rangeRings";
+import {
+  entityShipVariantEpoch,
+  entityShipVariantFor,
+} from "@/features/replay/entityShipVariant";
 import type {
   AchievementEvent,
   ArenaPlayer,
@@ -3325,9 +3329,16 @@ const RECORDED_DOLLY_MIN = -40;
       if (props.branch === "wg" || props.branch === "lesta") return props.branch;
       return branchOfReplay(props.replayPath);
     });
-    watch(shipLabels, () => {
+    // The per-player hull-variant epoch rides the sources: a late variant
+    // resolution (event ships, entityShipVariant.ts) re-resolves the self
+    // ring set with the recorded player's ACTUAL hull concealment.
+    watch([shipLabels, entityShipVariantEpoch], () => {
       const self = shipLabels.value.find((l) => l.role === "self");
-      ctx.selfRings = resolveSelfRings(self?.shipId, dataBranch.value);
+      ctx.selfRings = resolveSelfRings(
+        self?.shipId,
+        dataBranch.value,
+        entityShipVariantFor(self?.entityId ?? null, self?.name ?? null),
+      );
       selfRingsView.value = ctx.selfRings;
       buildRangeRings(ctx, ctx.selfRings);
       updateRangeRings(ctx, current.value);

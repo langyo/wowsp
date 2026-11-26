@@ -61,6 +61,10 @@ import { parsePostBattle, type PostBattleRibbon } from "@/features/replay/postBa
 import { applyDarkDeathInference, resolveMaxHp } from "@/features/holographic/shipHp";
 import PostBattlePanel from "@/features/replay/PostBattlePanel";
 import {
+  registerEntityShipVariants,
+  resetEntityShipVariants,
+} from "@/features/replay/entityShipVariant";
+import {
   columnsNeedShipStats,
   overlayColumnDims,
   resolveRosterBattleScope,
@@ -2793,6 +2797,10 @@ export default defineComponent({
         weatherNotifications.value = [];
         consumableUses.value = [];
         allyBuilds.value = [];
+        // A new replay reuses BigWorld entity ids and player names — the
+        // previous battle's per-player hull overrides must not bleed into
+        // it (a late/failed decode would otherwise keep showing them).
+        resetEntityShipVariants();
         inferredDeaths.value = new Set();
         showChat.value = false;
         duration.value = 0;
@@ -2853,6 +2861,15 @@ export default defineComponent({
         weatherNotifications.value = stream.weatherNotifications ?? [];
         consumableUses.value = stream.consumableUses ?? [];
         allyBuilds.value = stream.allyBuilds ?? [];
+        // Per-player hull variants (event ships, entityShipVariant.ts):
+        // resolve every ally's actual hull off the ship's GameParams slice
+        // (fire-and-forget, one fetch per shipId) — the tooltip, the
+        // post-battle card and the self detection ring read the registry.
+        registerEntityShipVariants(
+          allyBuilds.value,
+          gd.config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
+          openReplayBranch.value,
+        );
         let maxT = 0;
         for (const tr of stream.trajectories) {
           for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
