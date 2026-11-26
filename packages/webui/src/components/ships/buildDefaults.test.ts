@@ -185,11 +185,41 @@ describe("pruneBuildForRealm", () => {
     ).toBeNull();
   });
 
-  it("one patch carries all three slices at once", () => {
+  it("one patch carries all four slices at once", () => {
     const out = pruneBuildForRealm(
       { skills: { Dead: 1 }, signals: ["PCEF005"], commander: "Gone" },
       TREE, SIGS, CMDS,
     )!;
-    expect(out).toEqual({ skills: {}, signals: [], commander: null });
+    expect(out).toEqual({ skills: {}, signals: [], commander: null, modules: {} });
+  });
+
+  it("resets non-empty module selections and reports changed", () => {
+    // A module name belongs to one realm's bundle, so a realm switch
+    // invalidates every selection even when the rest is in-catalog.
+    const out = pruneBuildForRealm(
+      {
+        skills: { GmShellReload: 1 },
+        signals: ["PCEF101"],
+        commander: null,
+        modules: { hull: "PRUH604_D7_HULL_TOP_2", artillery: "PRUA605_D7_ART_TOP" },
+      },
+      TREE, SIGS, CMDS,
+    )!;
+    expect(out.modules).toEqual({});
+  });
+
+  it("absent or empty modules stay patch-free", () => {
+    expect(
+      pruneBuildForRealm(
+        { skills: { GmShellReload: 1 }, signals: ["PCEF101"], commander: null, modules: {} },
+        TREE, SIGS, CMDS,
+      ),
+    ).toBeNull();
+    expect(
+      pruneBuildForRealm(
+        { skills: { GmShellReload: 1 }, signals: ["PCEF101"], commander: null },
+        TREE, SIGS, CMDS,
+      ),
+    ).toBeNull();
   });
 });

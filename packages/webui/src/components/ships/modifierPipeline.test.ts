@@ -8,9 +8,11 @@
  *   - the default_profile carries NO caliber field — the caliber-conditional
  *     fire-chance gates need the GameParams-derived `caliberMm` fallback.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { emptyBuild, recomputeStats, type PlannerBuild } from "./modifierPipeline";
+import type { ModuleStats } from "@/utils/shipModuleStats";
+import type { TechTreeRealm } from "@/utils/techTreeData";
 import type { Profile } from "./shipSpecs";
 
 const RAW_PROFILE = {
@@ -151,5 +153,106 @@ describe("recomputeStats realm routing", () => {
     expect(recomputeStats(PROFILE, "Cruiser", 8, build, 1).modified.speed).toBe(30);
     const wg: PlannerBuild = { ...emptyBuild(), signals: ["PCEF005"] };
     expect(recomputeStats(PROFILE, "Cruiser", 8, wg, 1).modified.speed).toBeCloseTo(31.5, 5);
+  });
+});
+
+/** Synthetic module-stats fixtures for the injected-resolver suite: the
+ *  repo's tests never pin real bundle numbers, so the fake resolver answers
+ *  from this table and the assertions stay self-evident. */
+function fakeStats(kind: ModuleStats["kind"], over: Partial<ModuleStats> = {}): ModuleStats {
+  return { gpid: null, ucType: "_Fake", kind, health: null, rangeM: null, reloadS: null, ...over };
+}
+/** Fake resolveModuleStats answering from a name → stats table (null
+ *  default = the pack does not know the module). */
+function resolverOf(
+  table: Record<string, ModuleStats | null>,
+): (realm: TechTreeRealm, name: string) => ModuleStats | null {
+  return (_realm, name) => table[name] ?? null;
+}
+
+describe("recomputeStats module overrides", () => {
+  it("a mounted hull module rebases base HP", () => {
+    const table = { FAKE_HULL_TOP: fakeStats("hull", { health: 61_300 }) };
+    const build: PlannerBuild = { ...emptyBuild(), modules: { hull: "FAKE_HULL_TOP" } };
+    const { base, modified } = recomputeStats(PROFILE, "Cruiser", 8, build, 1, null, "wg", resolverOf(table));
+    expect(base.hp).toBe(61_300);
+    expect(modified.hp).toBe(61_300);
+  });
+
+  it("a mounted artillery module overrides range (meters → km) and reload", () => {
+    const table = { FAKE_ART_TOP: fakeStats("artillery", { rangeM: 21_300, reloadS: 18 }) };
+    const build: PlannerBuild = { ...emptyBuild(), modules: { artillery: "FAKE_ART_TOP" } };
+    const { base } = recomputeStats(PROFILE, "Cruiser", 8, build, 1, null, "wg", resolverOf(table));
+    expect(base.range).toBeCloseTo(21.3, 5); // the pipeline's unit is km
+    expect(base.reload).toBe(18);
+  });
+
+  it("a mounted torpedo module overrides the torpedo reload", () => {
+    const table = { FAKE_TORP_TOP: fakeStats("torpedoes", { reloadS: 150 }) };
+    const build: PlannerBuild = { ...emptyBuild(), modules: { torpedoes: "FAKE_TORP_TOP" } };
+    const { base } = recomputeStats(PROFILE, "Destroyer", 8, build, 1, null, "wg", resolverOf(table));
+    expect(base.torpedoReload).toBe(150);
+  });
+
+  it("null stats fields never fabricate: the profile value survives", () => {
+    // The pack lists the module but knows none of the artillery numbers.
+    const table = { FAKE_ART_TOP: fakeStats("artillery") };
+    const build: PlannerBuild = { ...emptyBuild(), modules: { artillery: "FAKE_ART_TOP" } };
+    const { base } = recomputeStats(PROFILE, "Cruiser", 8, build, 1, null, "wg", resolverOf(table));
+    expect(base.range).toBe(20_000); // the profile's raw passthrough
+    expect(base.reload).toBe(20);
+  });
+
+  it("unknown module names leave the profile values alone", () => {
+    const build: PlannerBuild = { ...emptyBuild(), modules: { hull: "GONE_Module" } };
+    const { base } = recomputeStats(PROFILE, "Cruiser", 8, build, 1, null, "wg", resolverOf({}));
+    expect(base.hp).toBe(50_000);
+  });
+
+  it("roles without extracted stats (suo/engine) stay on the profile numbers", () => {
+    const spy = vi.fn((_realm: TechTreeRealm, _name: string) => null);
+    const build: PlannerBuild = { ...emptyBuild(), modules: { suo: "FAKE_SUO", engine: "FAKE_ENGINE" } };
+    const { base } = recomputeStats(PROFILE, "Cruiser", 8, build, 1, null, "wg", spy);
+    expect(base).toEqual(recomputeStats(PROFILE, "Cruiser", 8, emptyBuild(), 1, null, "wg", spy).base);
+    // The pipeline never even asks: only hull/artillery/torpedoes resolve.
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("empty/absent modules behave exactly as without the override pass", () => {
+    const resolver = resolverOf({ FAKE_HULL_TOP: fakeStats("hull", { health: 61_300 }) });
+    const empty: PlannerBuild = { ...emptyBuild() };
+    expect(recomputeStats(PROFILE, "Cruiser", 8, empty, 1, null, "wg", resolver).base).toEqual(
+      recomputeStats(PROFILE, "Cruiser", 8, emptyBuild(), 1, null, "wg", resolverOf({})).base,
+    );
+    const absent: PlannerBuild = { ...emptyBuild(), modules: undefined };
+    expect(recomputeStats(PROFILE, "Cruiser", 8, absent, 1, null, "wg", resolver).base.hp).toBe(50_000);
+  });
+
+  it("the overridden base feeds the multiplier pass, not the profile number", () => {
+    // Hull: base HP overridden to 61_300, then Charlie Kilo (PCEF030,
+    // healthHullCoeff 1.05) multiplies THE OVERRIDE → 64_365 (the profile
+    // number would land at 52_500).
+    const table = { FAKE_HULL_TOP: fakeStats("hull", { health: 61_300 }) };
+    const build: PlannerBuild = {
+      ...emptyBuild(),
+      signals: ["PCEF030"],
+      modules: { hull: "FAKE_HULL_TOP" },
+    };
+    const { modified } = recomputeStats(PROFILE, "Cruiser", 8, build, 1, null, "wg", resolverOf(table));
+    expect(modified.hp).toBeCloseTo(61_300 * 1.05, 5);
+    expect(modified.hp).not.toBeCloseTo(50_000 * 1.05, 5);
+
+    // Artillery reload: base overridden to 18 s, then Adrenaline Rush at 0
+    // HP multiplies it to 16.2 s (profile 20 s would give 18 s — ambiguous
+    // with the override itself — and 16.2 s disambiguates).
+    const art = { ...table, FAKE_ART_TOP: fakeStats("artillery", { reloadS: 18 }) };
+    const trigger: PlannerBuild = {
+      ...emptyBuild(),
+      skills: { TriggerGmReload: 1 },
+      modules: { artillery: "FAKE_ART_TOP" },
+    };
+    const low = recomputeStats(PROFILE, "Cruiser", 8, trigger, 0, null, "wg", resolverOf(art));
+    expect(low.base.reload).toBe(18);
+    expect(low.modified.reload).toBeCloseTo(16.2, 5);
   });
 });

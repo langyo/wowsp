@@ -1227,7 +1227,15 @@
   gap: 2px;
 }
 
+/* One square module tile; the glyph names the equipment kind, the caption
+   the localized equipment role and the corner chip the column variant.
+   Credits render under researched modules only. The tile is a real
+   <button> (the slot's pick control since the selection cursor landed):
+   reset the browser chrome so the wave-1 plate look survives the element
+   swap — inherit fonts/colors, keep the padding, and swap the tooltip-only
+   help cursor for the pointer a pressable control wears. */
 .planner-v__parts-tile {
+  appearance: none;
   position: relative;
   width: 56px;
   height: 56px;
@@ -1237,16 +1245,34 @@
   justify-content: center;
   gap: 2px;
   padding: 4px 2px 3px;
+  font: inherit;
+  color: inherit;
   background: rgb(var(--color-text) / 4%);
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
-  cursor: help;
+  cursor: pointer;
   transition: border-color var(--duration-short) var(--ease-standard),
     background var(--duration-short) var(--ease-standard);
 
   &:hover {
     border-color: rgb(var(--color-primary) / 60%);
     background: rgb(var(--color-primary) / 8%);
+  }
+
+  /* Mounted module: the same primary ring the picked skill tile wears
+     (.skill-tile-v--active) — border, offset halo and a slight plate
+     brightening — so "this slot's current mount" reads identically across
+     both panels. The hover guard keeps the solid ring border from washing
+     to its 60% hover tint while the mounted tile is hovered (the skill
+     tile's hover only brightens, so its ring never washes either). */
+  &--active {
+    border-color: rgb(var(--color-primary));
+    box-shadow: 0 0 0 2px rgb(var(--color-primary) / 55%);
+    filter: brightness(1.15);
+
+    &:hover {
+      border-color: rgb(var(--color-primary));
+    }
   }
 }
 

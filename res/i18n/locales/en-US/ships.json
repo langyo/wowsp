@@ -846,7 +846,7 @@
   },
   "parts": {
     "empty": "No equipment research chain data for this ship.",
-    "intro": "Research chain of the hull's equipment modules. Column A is the stock module; stacked tiles in one column are alternative research options. Credits sit under a tile, research XP on the connectors.",
+    "intro": "Research chain of the hull's equipment modules. Column A is the stock module; stacked tiles in one column are parallel research options; the two-line value under a tile is the credits it needs and a connector's tooltip is its research XP. Click a tile to mount that module — the Combined Stats panel on the right recomputes; the top config is mounted by default.",
     "placeholderNote": "Module credits and research XP come from the in-game probe's price-catalog capture (WG filled; Lesta awaits its capture).",
     "stockHull": "Stock hull",
     "xpNeeded": "Research XP: {xp}",

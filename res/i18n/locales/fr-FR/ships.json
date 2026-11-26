@@ -846,7 +846,7 @@
   },
   "parts": {
     "empty": "Aucune donnée de chaîne de recherche d'équipement pour ce navire.",
-    "intro": "Chaîne de recherche des modules de coque. La colonne A est le module d'origine ; les tuiles empilées dans une colonne sont des options de recherche alternatives. Sous une tuile : les crédits ; sur les lignes : l'XP de recherche.",
+    "intro": "Chaîne de recherche des modules de coque. La colonne A est le module d'origine ; les tuiles empilées dans une colonne sont des options de recherche parallèles ; la valeur en deux lignes sous une tuile donne les crédits nécessaires et l'infobulle d'un connecteur donne son XP de recherche. Cliquez sur une tuile pour monter ce module — les statistiques combinées à droite se recalculent ; la configuration supérieure est montée par défaut.",
     "placeholderNote": "Les crédits et l'XP de recherche des modules proviennent de la capture du catalogue de prix par la sonde en jeu (WG rempli ; Lesta attend sa capture).",
     "stockHull": "Coque d'origine",
     "xpNeeded": "XP de recherche : {xp}",

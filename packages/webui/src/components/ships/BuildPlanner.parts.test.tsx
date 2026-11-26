@@ -157,7 +157,7 @@ vi.mock("./DataObserver", () => ({
 }));
 
 import BuildPlanner from "./BuildPlanner";
-import { emptyBuild } from "./modifierPipeline";
+import { emptyBuild, type PlannerBuild } from "./modifierPipeline";
 import { researchOf } from "@/utils/shipUpgradeChain";
 import type { ShipInfo } from "@/api";
 
@@ -184,9 +184,9 @@ function minsk(): ShipInfo {
   };
 }
 
-function mountParts(ship: ShipInfo = minsk()) {
+function mountParts(ship: ShipInfo = minsk(), build: PlannerBuild = emptyBuild()) {
   return mount(BuildPlanner, {
-    props: { ship, build: emptyBuild(), initialSection: "parts" },
+    props: { ship, build, initialSection: "parts" },
   });
 }
 
@@ -311,6 +311,77 @@ describe("BuildPlanner 装备选择 panel", () => {
     const wrapper = mountParts({ ...minsk(), shipId: 123456789 });
     expect(wrapper.find(".planner-v__parts").exists()).toBe(false);
     expect(wrapper.find(".planner-v__empty").text()).toBe("ships.parts.empty");
+  });
+});
+
+
+describe("BuildPlanner 装备选择 module selection", () => {
+  it("tiles are real buttons carrying the module name", () => {
+    const wrapper = mountParts();
+    const tiles = wrapper.findAll("button.planner-v__parts-tile");
+    // Minsk: 2 + 2 + 1 + 1 + 2 modules across the five slot rows.
+    expect(tiles).toHaveLength(8);
+  });
+
+  it("mounts each row's fully-researched top module by default", () => {
+    const wrapper = mountParts();
+    // One ring per slot row, sitting on the LAST column's first cell.
+    expect(wrapper.findAll(".planner-v__parts-tile--active")).toHaveLength(5);
+    const rows = wrapper.findAll(".planner-v__parts-row");
+    const hullRow = rows[0];
+    const top = hullRow.find(
+      '.planner-v__parts-cell[data-module="PRUH604_D7_HULL_TOP_2"] .planner-v__parts-tile',
+    );
+    expect(top.attributes("aria-pressed")).toBe("true");
+    // The stock cell stays an unpressed option.
+    const stock = hullRow.find(
+      '.planner-v__parts-cell[data-module="PRUH603_D7_HULL_STOCK_2"] .planner-v__parts-tile',
+    );
+    expect(stock.attributes("aria-pressed")).toBe("false");
+  });
+
+  it("clicking a tile emits the build with that module mounted", async () => {
+    const wrapper = mountParts();
+    const stock = wrapper.find(
+      '.planner-v__parts-cell[data-module="PRUH603_D7_HULL_STOCK_2"] .planner-v__parts-tile',
+    );
+    await stock.trigger("click");
+    const emitted = wrapper.emitted("update:build");
+    expect(emitted).toHaveLength(1);
+    const build = emitted![0][0] as PlannerBuild;
+    expect(build.modules?.hull).toBe("PRUH603_D7_HULL_STOCK_2");
+    // The rest of the build rides the merge untouched.
+    expect(build.skills).toEqual({});
+    expect(build.signals).toEqual([]);
+    expect(build.healthPct).toBe(1);
+  });
+
+  it("honors a stored selection and degrades a stale name to the default", () => {
+    // A stored pick overrides the top-default rendering.
+    const picked = mountParts(minsk(), {
+      ...emptyBuild(),
+      modules: { hull: "PRUH603_D7_HULL_STOCK_2" },
+    });
+    const pickedStock = picked.find(
+      '.planner-v__parts-cell[data-module="PRUH603_D7_HULL_STOCK_2"] .planner-v__parts-tile',
+    );
+    expect(pickedStock.classes()).toContain("planner-v__parts-tile--active");
+    const pickedTop = picked.find(
+      '.planner-v__parts-cell[data-module="PRUH604_D7_HULL_TOP_2"] .planner-v__parts-tile',
+    );
+    expect(pickedTop.classes()).not.toContain("planner-v__parts-tile--active");
+
+    // A name the row no longer carries (cleared realm bundle, restored
+    // persistence) silently falls back to the top default — never a
+    // highlighted ghost.
+    const stale = mountParts(minsk(), {
+      ...emptyBuild(),
+      modules: { hull: "GONE_OTHER_REALM_HULL_TOP" },
+    });
+    const staleTop = stale.find(
+      '.planner-v__parts-cell[data-module="PRUH604_D7_HULL_TOP_2"] .planner-v__parts-tile',
+    );
+    expect(staleTop.classes()).toContain("planner-v__parts-tile--active");
   });
 });
 

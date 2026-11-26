@@ -846,7 +846,7 @@
   },
   "parts": {
     "empty": "No hay datos de la cadena de investigación de equipo para este buque.",
-    "intro": "Cadena de investigación de los módulos del casco. La columna A es el módulo de origen; las fichas apiladas en una columna son opciones de investigación alternativas. Bajo la ficha, los créditos; en las líneas, la XP de investigación.",
+    "intro": "Cadena de investigación de los módulos del casco. La columna A es el módulo de origen; las fichas apiladas en una columna son opciones de investigación paralelas; el valor de dos líneas bajo una ficha son los créditos que necesita y la información emergente de un conector es su XP de investigación. Haz clic en una ficha para montar ese módulo: las estadísticas combinadas de la derecha se recalculan; la configuración superior está montada por defecto.",
     "placeholderNote": "Los créditos y la XP de investigación de los módulos provienen de la captura del catálogo de precios realizada por la sonda dentro del juego (WG ya capturado; Lesta pendiente de captura).",
     "stockHull": "Casco de origen",
     "xpNeeded": "XP de investigación: {xp}",

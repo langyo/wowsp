@@ -480,6 +480,11 @@ export default defineComponent({
             skills: banPruned ? skills : base!.skills,
             signals: base ? base.signals : props.build.signals,
             commander: base ? base.commander : props.build.commander,
+            // A realm switch resets the equipment-chain selections (a
+            // module name belongs to one realm's bundle); no prune means
+            // the map rides along untouched — spreading the patch would
+            // otherwise stamp a literal undefined key on clean builds.
+            ...(base ? { modules: base.modules } : {}),
           });
         }
       },
@@ -1556,6 +1561,32 @@ export default defineComponent({
       );
     }
 
+    /** The row's UNPICKED default mount: the LAST column's first cell —
+     *  the fully-researched config the WG default_profile numbers already
+     *  describe (a null-safe read for degenerate single-cell chains). */
+    function defaultModuleOf(row: UpgradeRow): UpgradeCell | null {
+      return row.columns[row.columns.length - 1]?.[0] ?? null;
+    }
+    /** Effective selection of one slot row: the build's stored pick while
+     *  that name still exists among the row's cells, else the default.
+     *  A stale realm-switched name (cleared by the realm prune, defensive
+     *  for builds arriving from persistence) degrades to the default
+     *  silently — the panel never highlights a missing module. */
+    function selectedModuleOf(row: UpgradeRow): UpgradeCell | null {
+      const wanted = props.build.modules?.[row.role];
+      if (wanted) {
+        const hit = row.cells.find((cell) => cell.step.name === wanted);
+        if (hit) return hit;
+      }
+      return defaultModuleOf(row);
+    }
+    /** Mount a module on the row's slot: the selection rides the build's
+     *  modules map (role-keyed), and the 综合属性 panel recomputes off the
+     *  same build object via its recomputeStats feed. */
+    function selectModule(row: UpgradeRow, cell: UpgradeCell): void {
+      setBuild({ modules: { ...props.build.modules, [row.role]: cell.step.name } });
+    }
+
     function renderPartsCell(cell: UpgradeCell, row: UpgradeRow, geo: PartsRowGeometry) {
       const hullStock = row.role === "hull" && cell.column === 0;
       const credits = partsNumber(cell.step.credits);
@@ -1566,6 +1597,9 @@ export default defineComponent({
       // The glyph names the equipment KIND; the column letter rides the
       // corner chip (parallel variants of one column share it).
       const RoleIcon = PARTS_ROLE_ICONS[row.role] ?? Wrench;
+      // Selection cursor: the mounted module of this row wears the primary
+      // ring; every other tile stays a plain pressable option.
+      const selected = selectedModuleOf(row)?.step.name === cell.step.name;
       return (
         <div
           class="planner-v__parts-cell"
@@ -1579,10 +1613,17 @@ export default defineComponent({
             width: PARTS_TILE + "px",
           }}
         >
-          <div
-            class="planner-v__parts-tile"
+          {/* A real <button> (not the wave-1 div): the tile IS the pick
+              control for its slot, so keyboard/AT users get it for free.
+              The wave-1 plate look is preserved by the SCSS button reset;
+              the glyph/letter/caption stack below is untouched. */}
+          <button
+            type="button"
+            class={["planner-v__parts-tile", selected ? "planner-v__parts-tile--active" : ""]}
+            aria-pressed={selected}
             data-hint-card={partsModuleCard(cell, row)}
             data-hint-pos="top"
+            onClick={() => selectModule(row, cell)}
           >
             <span class="planner-v__parts-letter">{cell.variant}</span>
             {/* h() not JSX: a Component-typed value is not a JSX element type. */}
@@ -1590,7 +1631,7 @@ export default defineComponent({
             <span class="planner-v__parts-role">
               {hullStock ? t("ships.parts.stockHull") : partsRoleLabel(row.role)}
             </span>
-          </div>
+          </button>
           {/* Researched tiles carry a two-line credits stack: the muted
               label names the currency, the number below it stays the bare
               value (an em dash while a realm's price catalog is missing). */}
@@ -1723,7 +1764,10 @@ export default defineComponent({
     /** Horizontal equipment research chain: one row per ucType slot, stock
      *  -> top left to right, credits under researched modules, XP on the
      *  connectors, next-tier cards after a row's last module and the
-     *  previous-tier card on the first row's left. */
+     *  previous-tier card on the first row's left. Every tile is a real
+     *  button: exactly one module per slot mounts (the fully-researched
+     *  top config by default) and the 综合属性 panel recomputes off the
+     *  shared build object. */
     function renderParts() {
       const panelModel = upgradePanel.value;
       if (!panelModel) {
