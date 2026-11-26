@@ -283,6 +283,14 @@
        on desktop, so nothing about the desktop tier rows moves. */
     & > .hk-scroll-container-viewport {
       overscroll-behavior-x: contain;
+      /* padding-block opens room inside the viewport PADDING box for the
+         active tile's ring: hikari's horizontal viewport rule sets
+         overflow-y: hidden, which clips at the padding box, and the plate
+         grid sits flush at the viewport top — so the picked skill's
+         box-shadow ring (0 0 0 2px) lost its top 2px on every tier row.
+         3px is vertical-only: the phone-width horizontal pan and the
+         vertically centered tier label are unaffected. */
+      padding-block: 3px;
     }
   }
 
