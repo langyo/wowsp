@@ -865,6 +865,7 @@
     "requiresModule": "Module requis",
     "creditsHint": "Crédits de recherche",
     "creditsNeeded": "Crédits requis",
+    "buyShipCreditsHint": "Crédits nécessaires pour acheter ce navire",
     "gameparamsMissing": "Les données de modules GameParams ne sont pas chargées.",
     "role": {
       "hull": "Coque",

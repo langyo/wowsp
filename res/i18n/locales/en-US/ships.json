@@ -865,6 +865,7 @@
     "requiresModule": "Requires module",
     "creditsHint": "Research credits",
     "creditsNeeded": "Credits needed",
+    "buyShipCreditsHint": "Credits needed to buy this ship",
     "gameparamsMissing": "GameParams module data is not loaded.",
     "role": {
       "hull": "Hull",

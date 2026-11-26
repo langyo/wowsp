@@ -865,6 +865,7 @@
     "requiresModule": "Требуется модуль",
     "creditsHint": "Серебро для исследований",
     "creditsNeeded": "Требуется серебра",
+    "buyShipCreditsHint": "Серебро для покупки этого корабля",
     "gameparamsMissing": "Данные модулей GameParams не загружены.",
     "role": {
       "hull": "Корпус",

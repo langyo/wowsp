@@ -40,7 +40,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import type { HintTag } from "@/composables/globalTooltip";
 import { AssetImage } from "@/components/base/AssetImage";
 import { techTreeNode, type TechTreeRealm } from "@/utils/techTreeData";
-import { shipUpgradeChain } from "@/utils/shipUpgradeChain";
+import { researchOf, shipUpgradeChain } from "@/utils/shipUpgradeChain";
 import { resolveNationFlag } from "@/utils/nationFlags";
 import { tierToRoman } from "@wowsp/holo";
 import { useShipsUiStore, type ShipsTreeRealm } from "@/stores/shipsUi";
@@ -49,6 +49,7 @@ import NationFlag from "@/components/base/NationFlag";
 import type { ShipInfo } from "@/api";
 import {
   buildUpgradeChainRows,
+  componentDisplayOf,
   mountedComponents,
   resolvePreviousShip,
   variantMarkerOf,
@@ -866,23 +867,48 @@ export default defineComponent({
         ],
       });
     }
-    /** Hover card of one module tile: localized role+variant title, the raw
-     *  GameParams entry name as subtitle, the component roles it mounts, the
-     *  required cross-slot module when the connector had to fall back to this
-     *  slot's previous column, and the TODO stat slots (module stats are not
-     *  in the extracted data yet). */
+    /** Name -> cell index of the WHOLE panel: the requires-module line can
+     *  then name a cross-slot prerequisite the way the panel draws it
+     *  (localized role + column letter, "Hull B") instead of the raw
+     *  GameParams key. Modules outside this panel keep the raw key. */
+    const partsCellByName = computed(() => {
+      const map = new Map<string, { row: UpgradeRow; cell: UpgradeCell }>();
+      for (const row of upgradePanel.value?.rows ?? []) {
+        for (const cell of row.cells) map.set(cell.step.name, { row, cell });
+      }
+      return map;
+    });
+
+    /** Hover card of one module tile: localized role+variant title, the
+     *  component roles it mounts, the required cross-slot module when the
+     *  connector had to fall back to this slot's previous column, and the
+     *  per-module stats the extracted pack knows. The raw GameParams entry
+     *  name has no line of its own — it stays reachable on the cell's
+     *  data-module attribute. */
     function partsModuleCard(cell: UpgradeCell, row: UpgradeRow): string {
       const hullStock = row.role === "hull" && cell.column === 0;
       const rows: Array<{ label: string; value: string }> = [];
       for (const mounted of mountedComponents(cell.step.components)) {
-        rows.push({ label: partsRoleLabel(mounted.role), value: mounted.names.join(", ") });
+        // Parsed names read as "role + variant" ("Hull B"); names the parser
+        // cannot shape ("AB1_Torpedoes", TIER-suffixed chains) stay verbatim.
+        const display = mounted.names.map((name) => {
+          const parsed = componentDisplayOf(name);
+          return parsed ? partsRoleLabel(parsed.role) + " " + parsed.variant : name;
+        });
+        rows.push({ label: partsRoleLabel(mounted.role), value: display.join(", ") });
       }
       const prev = typeof cell.step.prev === "string" ? cell.step.prev : "";
       if (prev && cell.parentName !== prev) {
         // Cross-slot prerequisite (hull-locked torpedo/artillery tops): the
         // line keeps this slot's own previous column, the required module
         // rides the card instead.
-        rows.push({ label: t("ships.parts.requiresModule"), value: prev });
+        const required = partsCellByName.value.get(prev);
+        rows.push({
+          label: t("ships.parts.requiresModule"),
+          value: required
+            ? partsRoleLabel(required.row.role) + " " + required.cell.variant
+            : prev,
+        });
       }
       const marker = variantMarkerOf(cell.step.name);
       if (marker) {
@@ -914,7 +940,6 @@ export default defineComponent({
           ? t("ships.parts.stockHull")
           : partsRoleLabel(row.role) + " " + cell.variant,
         badge: cell.variant,
-        subtitle: cell.step.name,
         rows,
         note: !props.gameparams
           ? t("ships.parts.gameparamsMissing")
@@ -1582,11 +1607,14 @@ export default defineComponent({
     }
 
     /** Previous/next-tier mini card: nation flag + name + tier badge; a
-     *  click asks the host to close this detail and open that ship. */
-    function renderPartsShip(shipId: number) {
+     *  click asks the host to close this detail and open that ship. Next-tier
+     *  cards additionally show the ship's port price below when the bundle
+     *  knows it — a real number only, never a dash (an unknown price simply
+     *  omits the line, e.g. every Lesta snapshot before its own capture). */
+    function renderPartsShip(shipId: number, withPrice = false) {
       const tier = partsShipTier(shipId);
       const nation = partsShipNation(shipId);
-      return (
+      const card = (
         <button
           type="button"
           class="planner-v__parts-ship"
@@ -1600,6 +1628,23 @@ export default defineComponent({
             <span class="planner-v__parts-ship-tier">{tierToRoman(tier)}</span>
           ) : null}
         </button>
+      );
+      if (!withPrice) return card;
+      const credits = researchOf(shipId, realm.value)?.credits;
+      if (typeof credits !== "number" || credits <= 0) return card;
+      return (
+        <div class="planner-v__parts-ship-buy">
+          {card}
+          <span
+            class="planner-v__parts-ship-price"
+            data-hint={t("ships.parts.buyShipCreditsHint")}
+          >
+            <span class="planner-v__parts-credits-label">
+              {t("ships.parts.creditsNeeded")}
+            </span>
+            <span class="planner-v__parts-credits-value">{partsNumber(credits)}</span>
+          </span>
+        </div>
       );
     }
 
@@ -1667,7 +1712,7 @@ export default defineComponent({
                 data-hint-pos="top"
               />
               <div class="planner-v__parts-next-cards" style={{ top: anchorY + "px" }}>
-                {row.nextShips.map((link) => renderPartsShip(link.shipId))}
+                {row.nextShips.map((link) => renderPartsShip(link.shipId, true))}
               </div>
             </div>
           ) : null}

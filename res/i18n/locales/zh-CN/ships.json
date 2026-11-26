@@ -865,6 +865,7 @@
     "requiresModule": "所需前置模块",
     "creditsHint": "研发所需银币",
     "creditsNeeded": "需要银币",
+    "buyShipCreditsHint": "购买该舰所需的银币",
     "gameparamsMissing": "GameParams 模块数据尚未加载。",
     "role": {
       "hull": "船体",

@@ -158,12 +158,15 @@ vi.mock("./DataObserver", () => ({
 
 import BuildPlanner from "./BuildPlanner";
 import { emptyBuild } from "./modifierPipeline";
+import { researchOf } from "@/utils/shipUpgradeChain";
 import type { ShipInfo } from "@/api";
 
 enableAutoUnmount(afterEach);
 
 const MINSK = 4077794768;
 const PR_48 = 3971888592;
+/** Kiev (PRSD109) — the cross-slot torpedo prerequisite fixture. */
+const KIEV = 4180555216;
 
 function minsk(): ShipInfo {
   return {
@@ -255,6 +258,53 @@ describe("BuildPlanner 装备选择 panel", () => {
     const card = wrapper.findAll(".planner-v__parts-next .planner-v__parts-ship")[0];
     await card.trigger("click");
     expect(wrapper.emitted("openShip")).toEqual([[PR_48]]);
+  });
+
+  it("shows the port price under next-tier cards only when the bundle knows it", () => {
+    const wrapper = mountParts();
+    const buys = wrapper.findAll(".planner-v__parts-next .planner-v__parts-ship-buy");
+    // Hull -> Pr.48 and torpedoes -> Pr.30: both targets carry a WG port
+    // price, so both cards get the label/number stack under them.
+    expect(buys).toHaveLength(2);
+    const price = buys[0].find(".planner-v__parts-ship-price");
+    expect(price.find(".planner-v__parts-credits-label").text()).toBe(
+      "ships.parts.creditsNeeded",
+    );
+    expect(price.find(".planner-v__parts-credits-value").text()).toBe(
+      researchOf(PR_48)!.credits.toLocaleString(),
+    );
+    expect(price.attributes("data-hint")).toBe("ships.parts.buyShipCreditsHint");
+    // The previous-tier card carries no price line at all.
+    expect(wrapper.find(".planner-v__parts-prev .planner-v__parts-ship-price").exists()).toBe(
+      false,
+    );
+  });
+
+  it("names hover-card components and prerequisites without raw game keys", () => {
+    const wrapper = mountParts();
+    // The hull top's card: no raw GameParams subtitle, the hull component
+    // reads as "role + variant", and the raw key stays on data-module only.
+    const tile = wrapper.find(
+      '.planner-v__parts-cell[data-module="PRUH604_D7_HULL_TOP_2"] .planner-v__parts-tile',
+    );
+    const card = JSON.parse(tile.attributes("data-hint-card")!);
+    expect(card.subtitle).toBeUndefined();
+    expect(card.title).toBe("ships.parts.role.hull B");
+    const hullRow = card.rows.find(
+      (row: { label: string }) => row.label === "ships.parts.role.hull",
+    );
+    expect(hullRow.value).toBe("ships.parts.role.hull B");
+    // Kiev: the top torpedoes' cross-slot prerequisite names the hull cell
+    // it needs (localized role + column letter), not the GameParams key.
+    const kiev = mountParts({ ...minsk(), shipId: KIEV });
+    const kievTop = kiev.find(
+      '.planner-v__parts-cell[data-module="PRUT602_D7_TORP_TOP"] .planner-v__parts-tile',
+    );
+    const kievCard = JSON.parse(kievTop.attributes("data-hint-card")!);
+    const required = kievCard.rows.find(
+      (row: { label: string }) => row.label === "ships.parts.requiresModule",
+    );
+    expect(required.value).toBe("ships.parts.role.hull B");
   });
 
   it("renders the empty state when the ship has no chain data", () => {

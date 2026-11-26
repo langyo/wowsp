@@ -865,6 +865,7 @@
     "requiresModule": "所需前置模組",
     "creditsHint": "研發所需銀幣",
     "creditsNeeded": "需要銀幣",
+    "buyShipCreditsHint": "購買該艦所需的銀幣",
     "gameparamsMissing": "GameParams 模組資料尚未載入。",
     "role": {
       "hull": "船體",

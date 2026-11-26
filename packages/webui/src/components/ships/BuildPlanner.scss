@@ -1365,8 +1365,29 @@
   left: 42px;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
   transform: translateY(-50%);
+}
+
+/* Card + port price of one next-tier ship: the known price sits under its
+   card as the same muted label/number stack the tiles use (unknown prices
+   render no line at all — never a dash). */
+.planner-v__parts-ship-buy {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+}
+
+.planner-v__parts-ship-price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: 9px;
+  line-height: 11px;
+  color: rgb(var(--color-muted));
+  cursor: help;
 }
 
 .planner-v__parts-placeholder {
