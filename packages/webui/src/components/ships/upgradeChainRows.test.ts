@@ -26,6 +26,8 @@ import { techTreeNode, type TechTreeNode } from "@/utils/techTreeData";
 import {
   buildUpgradeChainRows,
   chainRole,
+  componentDisplayOf,
+  isChainComponentRole,
   mountedComponents,
   pickPreviousShip,
   researchNextShipIds,
@@ -397,5 +399,34 @@ describe("tile/role presentation helpers", () => {
     expect(mountedComponents({ hull: [], engine: ["AB_Engine"] })).toEqual([
       { role: "engine", names: ["AB_Engine"] },
     ]);
+  });
+
+  it("parses component names into role + variant for the hover card", () => {
+    // Real-shaped WG component names.
+    expect(componentDisplayOf("B_Hull")).toEqual({ role: "hull", variant: "B" });
+    expect(componentDisplayOf("A_Artillery")).toEqual({ role: "artillery", variant: "A" });
+    expect(componentDisplayOf("AB_AirArmament")).toEqual({ role: "airarmament", variant: "AB" });
+    expect(componentDisplayOf("A_ATBA")).toEqual({ role: "atba", variant: "A" });
+    // Mixed-case role words normalize through chainRole.
+    expect(componentDisplayOf("B_AirDefense")).toEqual({ role: "airdefense", variant: "B" });
+    // The pinger module's component word aliases onto the pinger role.
+    expect(componentDisplayOf("A_PingerGun")).toEqual({ role: "pinger", variant: "A" });
+    expect(isChainComponentRole("pinger")).toBe(true);
+    expect(isChainComponentRole("pingergun")).toBe(false);
+  });
+
+  it("rejects component names the display parser cannot shape", () => {
+    // GameParams entry names, bare stems and garbage never parse.
+    expect(componentDisplayOf("PRUH717_CA8_HULL_TOP")).toBeNull();
+    expect(componentDisplayOf("HullDefault")).toBeNull();
+    expect(componentDisplayOf("garbage")).toBeNull();
+    expect(componentDisplayOf("")).toBeNull();
+    // Digit-carrying variant prefixes and TIER-suffixed chains keep the
+    // raw name (callers fall back verbatim).
+    expect(componentDisplayOf("AB1_Torpedoes")).toBeNull();
+    expect(componentDisplayOf("A_Hull_TIER2")).toBeNull();
+    // A shaped name whose role word is not a known component role.
+    expect(componentDisplayOf("A_DepthChargeGuns")).toBeNull();
+    expect(componentDisplayOf("A_Missiles")).toBeNull();
   });
 });

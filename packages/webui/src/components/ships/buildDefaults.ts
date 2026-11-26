@@ -92,16 +92,19 @@ export interface RealmPruneResult {
   skills: Record<string, 1>;
   signals: string[];
   commander: string | null;
+  /** Module selections ride the patch too: a realm switch resets them to
+   *  the empty map (the panel degrades to its per-slot defaults). */
+  modules: Record<string, string>;
 }
 
 /** Pure realm-switch prune for a planner build: drop skill codes that the
  *  active realm's class tree does not know, signal indices outside the
- *  active realm's catalog, and a commander outside the active roster.
- *  Returns null when everything already belongs to the realm (no patch to
- *  emit). Hull-capability bans are NOT applied here — callers layer their
- *  own ban pass on top. */
+ *  active realm's catalog, a commander outside the active roster, and any
+ *  equipment-chain module selection. Returns null when everything already
+ *  belongs to the realm (no patch to emit). Hull-capability bans are NOT
+ *  applied here — callers layer their own ban pass on top. */
 export function pruneBuildForRealm(
-  build: Pick<PlannerBuild, "skills" | "signals" | "commander">,
+  build: Pick<PlannerBuild, "skills" | "signals" | "commander" | "modules">,
   treeCodes: ReadonlySet<string>,
   signalIndices: ReadonlySet<string>,
   commanderNames: ReadonlySet<string>,
@@ -119,7 +122,16 @@ export function pruneBuildForRealm(
   const commander =
     build.commander != null && commanderNames.has(build.commander) ? build.commander : null;
   if (commander !== build.commander) changed = true;
-  return changed ? { skills, signals, commander } : null;
+  // A module NAME belongs to exactly one realm's chain bundle — the WG
+  // bundle's top hull does not exist in the Lesta bundle and vice versa —
+  // so a realm switch invalidates every selection at once. An absent or
+  // empty map is already reset-shaped and leaves the changed flag alone.
+  const modules = build.modules ?? {};
+  const hadModules = Object.keys(modules).length > 0;
+  if (hadModules) changed = true;
+  return changed
+    ? { skills, signals, commander, modules: hadModules ? {} : modules }
+    : null;
 }
 
 export const MODERNIZATIONS: ModernizationEntry[] =

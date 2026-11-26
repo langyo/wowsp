@@ -846,7 +846,7 @@
   },
   "parts": {
     "empty": "该舰暂无装备研发链数据。",
-    "intro": "舰体装备模块的研发链。A 列为初始模块，同一栏堆叠表示该槽位有多种可选研发；方块下方为所需银币，连线提示所需研发经验。",
+    "intro": "舰体装备模块的研发链。A 列为初始模块，同一栏堆叠表示该槽位有多种可选研发；方块下方为所需银币，连线提示所需研发经验。点击方块切换该槽位装载的模块，右侧综合属性随之换算；默认装载完全体。",
     "placeholderNote": "模块银币与研发经验来自游戏内探针捕获的价目目录：WG 已填充，Lesta 待捕获后填充。",
     "stockHull": "基础船体",
     "xpNeeded": "研发经验：{xp}",
@@ -864,6 +864,8 @@
     "variantTop": "顶配",
     "requiresModule": "所需前置模块",
     "creditsHint": "研发所需银币",
+    "creditsNeeded": "需要银币",
+    "buyShipCreditsHint": "购买该舰所需的银币",
     "gameparamsMissing": "GameParams 模块数据尚未加载。",
     "role": {
       "hull": "船体",

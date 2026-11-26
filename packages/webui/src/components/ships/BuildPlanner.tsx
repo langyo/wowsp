@@ -8,7 +8,31 @@ import {
   type Component,
   type PropType,
 } from "vue";
-import { AlertTriangle, Ban, Coins, Lock, RotateCcw, Wrench, X } from "@lucide/vue";
+import {
+  AlertTriangle,
+  AudioWaveform,
+  Ban,
+  Binoculars,
+  Bomb,
+  Coins,
+  Compass,
+  Crosshair,
+  Gauge,
+  LocateFixed,
+  Lock,
+  Navigation,
+  Paintbrush,
+  Plane,
+  Radar,
+  RotateCcw,
+  Shield,
+  Ship,
+  Target,
+  Telescope,
+  WavesHorizontal,
+  Wrench,
+  X,
+} from "@lucide/vue";
 
 import { HkButton, HkPopover, HkScrollContainer, HkTabs } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
@@ -16,7 +40,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import type { HintTag } from "@/composables/globalTooltip";
 import { AssetImage } from "@/components/base/AssetImage";
 import { techTreeNode, type TechTreeRealm } from "@/utils/techTreeData";
-import { shipUpgradeChain } from "@/utils/shipUpgradeChain";
+import { researchOf, shipUpgradeChain } from "@/utils/shipUpgradeChain";
 import { resolveNationFlag } from "@/utils/nationFlags";
 import { tierToRoman } from "@wowsp/holo";
 import { useShipsUiStore, type ShipsTreeRealm } from "@/stores/shipsUi";
@@ -25,6 +49,7 @@ import NationFlag from "@/components/base/NationFlag";
 import type { ShipInfo } from "@/api";
 import {
   buildUpgradeChainRows,
+  componentDisplayOf,
   mountedComponents,
   resolvePreviousShip,
   variantMarkerOf,
@@ -266,6 +291,39 @@ function hasMsg(key: string): boolean {
   return (i18n.global as { te: (k: string) => boolean }).te(key);
 }
 
+/** Per-role lucide glyph of one equipment-chain tile: the tile shows the
+ *  equipment KIND (a hull for hull, a reticle for artillery, ...) instead of
+ *  the bare A/B column letter — the letter shrinks into a corner chip. Keys
+ *  are the normalized row roles; an unknown role falls back to the neutral
+ *  Wrench (the rail glyph this section already uses). WavesHorizontal is
+ *  this @lucide/vue version's name for the classic "waves" glyph (it is
+ *  listed under the "waves" alias; a plain Waves export does not exist). */
+const PARTS_ROLE_ICONS: Record<string, Component> = {
+  hull: Ship,
+  suo: LocateFixed,
+  firecontrol: LocateFixed,
+  artillery: Crosshair,
+  atba: Target,
+  torpedoes: WavesHorizontal,
+  depthcharges: Bomb,
+  airdefense: Shield,
+  airarmament: Plane,
+  fighter: Plane,
+  torpedobomber: Plane,
+  divebomber: Plane,
+  skipbomber: Plane,
+  airsupport: Telescope,
+  pinger: AudioWaveform,
+  sonar: AudioWaveform,
+  radars: Radar,
+  directors: Compass,
+  finders: Binoculars,
+  engine: Gauge,
+  flightcontrol: Navigation,
+  specials: Wrench,
+  visualcustomizations: Paintbrush,
+};
+
 type Section = "parts" | "skills" | "captains" | "flags" | "upgrades" | "costs";
 
 export default defineComponent({
@@ -422,6 +480,11 @@ export default defineComponent({
             skills: banPruned ? skills : base!.skills,
             signals: base ? base.signals : props.build.signals,
             commander: base ? base.commander : props.build.commander,
+            // A realm switch resets the equipment-chain selections (a
+            // module name belongs to one realm's bundle); no prune means
+            // the map rides along untouched — spreading the patch would
+            // otherwise stamp a literal undefined key on clean builds.
+            ...(base ? { modules: base.modules } : {}),
           });
         }
       },
@@ -809,23 +872,48 @@ export default defineComponent({
         ],
       });
     }
-    /** Hover card of one module tile: localized role+variant title, the raw
-     *  GameParams entry name as subtitle, the component roles it mounts, the
-     *  required cross-slot module when the connector had to fall back to this
-     *  slot's previous column, and the TODO stat slots (module stats are not
-     *  in the extracted data yet). */
+    /** Name -> cell index of the WHOLE panel: the requires-module line can
+     *  then name a cross-slot prerequisite the way the panel draws it
+     *  (localized role + column letter, "Hull B") instead of the raw
+     *  GameParams key. Modules outside this panel keep the raw key. */
+    const partsCellByName = computed(() => {
+      const map = new Map<string, { row: UpgradeRow; cell: UpgradeCell }>();
+      for (const row of upgradePanel.value?.rows ?? []) {
+        for (const cell of row.cells) map.set(cell.step.name, { row, cell });
+      }
+      return map;
+    });
+
+    /** Hover card of one module tile: localized role+variant title, the
+     *  component roles it mounts, the required cross-slot module when the
+     *  connector had to fall back to this slot's previous column, and the
+     *  per-module stats the extracted pack knows. The raw GameParams entry
+     *  name has no line of its own — it stays reachable on the cell's
+     *  data-module attribute. */
     function partsModuleCard(cell: UpgradeCell, row: UpgradeRow): string {
       const hullStock = row.role === "hull" && cell.column === 0;
       const rows: Array<{ label: string; value: string }> = [];
       for (const mounted of mountedComponents(cell.step.components)) {
-        rows.push({ label: partsRoleLabel(mounted.role), value: mounted.names.join(", ") });
+        // Parsed names read as "role + variant" ("Hull B"); names the parser
+        // cannot shape ("AB1_Torpedoes", TIER-suffixed chains) stay verbatim.
+        const display = mounted.names.map((name) => {
+          const parsed = componentDisplayOf(name);
+          return parsed ? partsRoleLabel(parsed.role) + " " + parsed.variant : name;
+        });
+        rows.push({ label: partsRoleLabel(mounted.role), value: display.join(", ") });
       }
       const prev = typeof cell.step.prev === "string" ? cell.step.prev : "";
       if (prev && cell.parentName !== prev) {
         // Cross-slot prerequisite (hull-locked torpedo/artillery tops): the
         // line keeps this slot's own previous column, the required module
         // rides the card instead.
-        rows.push({ label: t("ships.parts.requiresModule"), value: prev });
+        const required = partsCellByName.value.get(prev);
+        rows.push({
+          label: t("ships.parts.requiresModule"),
+          value: required
+            ? partsRoleLabel(required.row.role) + " " + required.cell.variant
+            : prev,
+        });
       }
       const marker = variantMarkerOf(cell.step.name);
       if (marker) {
@@ -857,7 +945,6 @@ export default defineComponent({
           ? t("ships.parts.stockHull")
           : partsRoleLabel(row.role) + " " + cell.variant,
         badge: cell.variant,
-        subtitle: cell.step.name,
         rows,
         note: !props.gameparams
           ? t("ships.parts.gameparamsMissing")
@@ -1474,6 +1561,32 @@ export default defineComponent({
       );
     }
 
+    /** The row's UNPICKED default mount: the LAST column's first cell —
+     *  the fully-researched config the WG default_profile numbers already
+     *  describe (a null-safe read for degenerate single-cell chains). */
+    function defaultModuleOf(row: UpgradeRow): UpgradeCell | null {
+      return row.columns[row.columns.length - 1]?.[0] ?? null;
+    }
+    /** Effective selection of one slot row: the build's stored pick while
+     *  that name still exists among the row's cells, else the default.
+     *  A stale realm-switched name (cleared by the realm prune, defensive
+     *  for builds arriving from persistence) degrades to the default
+     *  silently — the panel never highlights a missing module. */
+    function selectedModuleOf(row: UpgradeRow): UpgradeCell | null {
+      const wanted = props.build.modules?.[row.role];
+      if (wanted) {
+        const hit = row.cells.find((cell) => cell.step.name === wanted);
+        if (hit) return hit;
+      }
+      return defaultModuleOf(row);
+    }
+    /** Mount a module on the row's slot: the selection rides the build's
+     *  modules map (role-keyed), and the 综合属性 panel recomputes off the
+     *  same build object via its recomputeStats feed. */
+    function selectModule(row: UpgradeRow, cell: UpgradeCell): void {
+      setBuild({ modules: { ...props.build.modules, [row.role]: cell.step.name } });
+    }
+
     function renderPartsCell(cell: UpgradeCell, row: UpgradeRow, geo: PartsRowGeometry) {
       const hullStock = row.role === "hull" && cell.column === 0;
       const credits = partsNumber(cell.step.credits);
@@ -1481,6 +1594,12 @@ export default defineComponent({
         cell.step.credits == null
           ? t("ships.parts.creditsHint")
           : credits + " " + t("ships.skills.costCredits");
+      // The glyph names the equipment KIND; the column letter rides the
+      // corner chip (parallel variants of one column share it).
+      const RoleIcon = PARTS_ROLE_ICONS[row.role] ?? Wrench;
+      // Selection cursor: the mounted module of this row wears the primary
+      // ring; every other tile stays a plain pressable option.
+      const selected = selectedModuleOf(row)?.step.name === cell.step.name;
       return (
         <div
           class="planner-v__parts-cell"
@@ -1494,19 +1613,34 @@ export default defineComponent({
             width: PARTS_TILE + "px",
           }}
         >
-          <div
-            class="planner-v__parts-tile"
+          {/* A real <button> (not the wave-1 div): the tile IS the pick
+              control for its slot, so keyboard/AT users get it for free.
+              The wave-1 plate look is preserved by the SCSS button reset;
+              the glyph/letter/caption stack below is untouched. */}
+          <button
+            type="button"
+            class={["planner-v__parts-tile", selected ? "planner-v__parts-tile--active" : ""]}
+            aria-pressed={selected}
             data-hint-card={partsModuleCard(cell, row)}
             data-hint-pos="top"
+            onClick={() => selectModule(row, cell)}
           >
             <span class="planner-v__parts-letter">{cell.variant}</span>
+            {/* h() not JSX: a Component-typed value is not a JSX element type. */}
+            {h(RoleIcon, { size: 20, class: "planner-v__parts-icon" })}
             <span class="planner-v__parts-role">
               {hullStock ? t("ships.parts.stockHull") : partsRoleLabel(row.role)}
             </span>
-          </div>
+          </button>
+          {/* Researched tiles carry a two-line credits stack: the muted
+              label names the currency, the number below it stays the bare
+              value (an em dash while a realm's price catalog is missing). */}
           {cell.column > 0 ? (
             <span class="planner-v__parts-credits" data-hint={creditHint}>
-              {credits}
+              <span class="planner-v__parts-credits-label">
+                {t("ships.parts.creditsNeeded")}
+              </span>
+              <span class="planner-v__parts-credits-value">{credits}</span>
             </span>
           ) : null}
         </div>
@@ -1514,11 +1648,14 @@ export default defineComponent({
     }
 
     /** Previous/next-tier mini card: nation flag + name + tier badge; a
-     *  click asks the host to close this detail and open that ship. */
-    function renderPartsShip(shipId: number) {
+     *  click asks the host to close this detail and open that ship. Next-tier
+     *  cards additionally show the ship's port price below when the bundle
+     *  knows it — a real number only, never a dash (an unknown price simply
+     *  omits the line, e.g. every Lesta snapshot before its own capture). */
+    function renderPartsShip(shipId: number, withPrice = false) {
       const tier = partsShipTier(shipId);
       const nation = partsShipNation(shipId);
-      return (
+      const card = (
         <button
           type="button"
           class="planner-v__parts-ship"
@@ -1532,6 +1669,23 @@ export default defineComponent({
             <span class="planner-v__parts-ship-tier">{tierToRoman(tier)}</span>
           ) : null}
         </button>
+      );
+      if (!withPrice) return card;
+      const credits = researchOf(shipId, realm.value)?.credits;
+      if (typeof credits !== "number" || credits <= 0) return card;
+      return (
+        <div class="planner-v__parts-ship-buy">
+          {card}
+          <span
+            class="planner-v__parts-ship-price"
+            data-hint={t("ships.parts.buyShipCreditsHint")}
+          >
+            <span class="planner-v__parts-credits-label">
+              {t("ships.parts.creditsNeeded")}
+            </span>
+            <span class="planner-v__parts-credits-value">{partsNumber(credits)}</span>
+          </span>
+        </div>
       );
     }
 
@@ -1599,7 +1753,7 @@ export default defineComponent({
                 data-hint-pos="top"
               />
               <div class="planner-v__parts-next-cards" style={{ top: anchorY + "px" }}>
-                {row.nextShips.map((link) => renderPartsShip(link.shipId))}
+                {row.nextShips.map((link) => renderPartsShip(link.shipId, true))}
               </div>
             </div>
           ) : null}
@@ -1610,7 +1764,10 @@ export default defineComponent({
     /** Horizontal equipment research chain: one row per ucType slot, stock
      *  -> top left to right, credits under researched modules, XP on the
      *  connectors, next-tier cards after a row's last module and the
-     *  previous-tier card on the first row's left. */
+     *  previous-tier card on the first row's left. Every tile is a real
+     *  button: exactly one module per slot mounts (the fully-researched
+     *  top config by default) and the 综合属性 panel recomputes off the
+     *  shared build object. */
     function renderParts() {
       const panelModel = upgradePanel.value;
       if (!panelModel) {

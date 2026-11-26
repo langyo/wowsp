@@ -157,13 +157,16 @@ vi.mock("./DataObserver", () => ({
 }));
 
 import BuildPlanner from "./BuildPlanner";
-import { emptyBuild } from "./modifierPipeline";
+import { emptyBuild, type PlannerBuild } from "./modifierPipeline";
+import { researchOf } from "@/utils/shipUpgradeChain";
 import type { ShipInfo } from "@/api";
 
 enableAutoUnmount(afterEach);
 
 const MINSK = 4077794768;
 const PR_48 = 3971888592;
+/** Kiev (PRSD109) — the cross-slot torpedo prerequisite fixture. */
+const KIEV = 4180555216;
 
 function minsk(): ShipInfo {
   return {
@@ -181,9 +184,9 @@ function minsk(): ShipInfo {
   };
 }
 
-function mountParts(ship: ShipInfo = minsk()) {
+function mountParts(ship: ShipInfo = minsk(), build: PlannerBuild = emptyBuild()) {
   return mount(BuildPlanner, {
-    props: { ship, build: emptyBuild(), initialSection: "parts" },
+    props: { ship, build, initialSection: "parts" },
   });
 }
 
@@ -205,9 +208,22 @@ describe("BuildPlanner 装备选择 panel", () => {
     expect(wrapper.findAll(".planner-v__parts-tile")).toHaveLength(8);
     const credits = wrapper.findAll(".planner-v__parts-credits");
     expect(credits).toHaveLength(3);
-    // The buy-credit figures come from the server price-catalog capture: an
-    // em dash until the bundle carries them, a grouped number afterwards.
-    for (const credit of credits) expect(credit.text()).toMatch(/^(—|\d[\d,]*)$/);
+    // The buy-credit figures come from the server price-catalog capture: a
+    // muted localized label over the bare value — an em dash until a realm's
+    // catalog lands, a grouped number afterwards (i18n is stubbed, so the
+    // label renders as its raw key here).
+    for (const credit of credits) {
+      expect(credit.find(".planner-v__parts-credits-label").text()).toBe(
+        "ships.parts.creditsNeeded",
+      );
+      expect(credit.find(".planner-v__parts-credits-value").text()).toMatch(/^(—|\d[\d,]*)$/);
+    }
+    // Tiles read by role glyph + caption; the column letter rides the
+    // top-left corner chip (one per tile, A first).
+    expect(wrapper.findAll(".planner-v__parts-tile .planner-v__parts-icon")).toHaveLength(8);
+    const letters = wrapper.findAll(".planner-v__parts-letter");
+    expect(letters).toHaveLength(8);
+    expect(letters[0].text()).toBe("A");
     // The hull stock anchor is the GameParams stock module.
     const hullCells = rows[0].findAll(".planner-v__parts-cell");
     expect(hullCells[0].attributes("data-module")).toBe("PRUH603_D7_HULL_STOCK_2");
@@ -244,10 +260,128 @@ describe("BuildPlanner 装备选择 panel", () => {
     expect(wrapper.emitted("openShip")).toEqual([[PR_48]]);
   });
 
+  it("shows the port price under next-tier cards only when the bundle knows it", () => {
+    const wrapper = mountParts();
+    const buys = wrapper.findAll(".planner-v__parts-next .planner-v__parts-ship-buy");
+    // Hull -> Pr.48 and torpedoes -> Pr.30: both targets carry a WG port
+    // price, so both cards get the label/number stack under them.
+    expect(buys).toHaveLength(2);
+    const price = buys[0].find(".planner-v__parts-ship-price");
+    expect(price.find(".planner-v__parts-credits-label").text()).toBe(
+      "ships.parts.creditsNeeded",
+    );
+    expect(price.find(".planner-v__parts-credits-value").text()).toBe(
+      researchOf(PR_48)!.credits.toLocaleString(),
+    );
+    expect(price.attributes("data-hint")).toBe("ships.parts.buyShipCreditsHint");
+    // The previous-tier card carries no price line at all.
+    expect(wrapper.find(".planner-v__parts-prev .planner-v__parts-ship-price").exists()).toBe(
+      false,
+    );
+  });
+
+  it("names hover-card components and prerequisites without raw game keys", () => {
+    const wrapper = mountParts();
+    // The hull top's card: no raw GameParams subtitle, the hull component
+    // reads as "role + variant", and the raw key stays on data-module only.
+    const tile = wrapper.find(
+      '.planner-v__parts-cell[data-module="PRUH604_D7_HULL_TOP_2"] .planner-v__parts-tile',
+    );
+    const card = JSON.parse(tile.attributes("data-hint-card")!);
+    expect(card.subtitle).toBeUndefined();
+    expect(card.title).toBe("ships.parts.role.hull B");
+    const hullRow = card.rows.find(
+      (row: { label: string }) => row.label === "ships.parts.role.hull",
+    );
+    expect(hullRow.value).toBe("ships.parts.role.hull B");
+    // Kiev: the top torpedoes' cross-slot prerequisite names the hull cell
+    // it needs (localized role + column letter), not the GameParams key.
+    const kiev = mountParts({ ...minsk(), shipId: KIEV });
+    const kievTop = kiev.find(
+      '.planner-v__parts-cell[data-module="PRUT602_D7_TORP_TOP"] .planner-v__parts-tile',
+    );
+    const kievCard = JSON.parse(kievTop.attributes("data-hint-card")!);
+    const required = kievCard.rows.find(
+      (row: { label: string }) => row.label === "ships.parts.requiresModule",
+    );
+    expect(required.value).toBe("ships.parts.role.hull B");
+  });
+
   it("renders the empty state when the ship has no chain data", () => {
     const wrapper = mountParts({ ...minsk(), shipId: 123456789 });
     expect(wrapper.find(".planner-v__parts").exists()).toBe(false);
     expect(wrapper.find(".planner-v__empty").text()).toBe("ships.parts.empty");
+  });
+});
+
+
+describe("BuildPlanner 装备选择 module selection", () => {
+  it("tiles are real buttons carrying the module name", () => {
+    const wrapper = mountParts();
+    const tiles = wrapper.findAll("button.planner-v__parts-tile");
+    // Minsk: 2 + 2 + 1 + 1 + 2 modules across the five slot rows.
+    expect(tiles).toHaveLength(8);
+  });
+
+  it("mounts each row's fully-researched top module by default", () => {
+    const wrapper = mountParts();
+    // One ring per slot row, sitting on the LAST column's first cell.
+    expect(wrapper.findAll(".planner-v__parts-tile--active")).toHaveLength(5);
+    const rows = wrapper.findAll(".planner-v__parts-row");
+    const hullRow = rows[0];
+    const top = hullRow.find(
+      '.planner-v__parts-cell[data-module="PRUH604_D7_HULL_TOP_2"] .planner-v__parts-tile',
+    );
+    expect(top.attributes("aria-pressed")).toBe("true");
+    // The stock cell stays an unpressed option.
+    const stock = hullRow.find(
+      '.planner-v__parts-cell[data-module="PRUH603_D7_HULL_STOCK_2"] .planner-v__parts-tile',
+    );
+    expect(stock.attributes("aria-pressed")).toBe("false");
+  });
+
+  it("clicking a tile emits the build with that module mounted", async () => {
+    const wrapper = mountParts();
+    const stock = wrapper.find(
+      '.planner-v__parts-cell[data-module="PRUH603_D7_HULL_STOCK_2"] .planner-v__parts-tile',
+    );
+    await stock.trigger("click");
+    const emitted = wrapper.emitted("update:build");
+    expect(emitted).toHaveLength(1);
+    const build = emitted![0][0] as PlannerBuild;
+    expect(build.modules?.hull).toBe("PRUH603_D7_HULL_STOCK_2");
+    // The rest of the build rides the merge untouched.
+    expect(build.skills).toEqual({});
+    expect(build.signals).toEqual([]);
+    expect(build.healthPct).toBe(1);
+  });
+
+  it("honors a stored selection and degrades a stale name to the default", () => {
+    // A stored pick overrides the top-default rendering.
+    const picked = mountParts(minsk(), {
+      ...emptyBuild(),
+      modules: { hull: "PRUH603_D7_HULL_STOCK_2" },
+    });
+    const pickedStock = picked.find(
+      '.planner-v__parts-cell[data-module="PRUH603_D7_HULL_STOCK_2"] .planner-v__parts-tile',
+    );
+    expect(pickedStock.classes()).toContain("planner-v__parts-tile--active");
+    const pickedTop = picked.find(
+      '.planner-v__parts-cell[data-module="PRUH604_D7_HULL_TOP_2"] .planner-v__parts-tile',
+    );
+    expect(pickedTop.classes()).not.toContain("planner-v__parts-tile--active");
+
+    // A name the row no longer carries (cleared realm bundle, restored
+    // persistence) silently falls back to the top default — never a
+    // highlighted ghost.
+    const stale = mountParts(minsk(), {
+      ...emptyBuild(),
+      modules: { hull: "GONE_OTHER_REALM_HULL_TOP" },
+    });
+    const staleTop = stale.find(
+      '.planner-v__parts-cell[data-module="PRUH604_D7_HULL_TOP_2"] .planner-v__parts-tile',
+    );
+    expect(staleTop.classes()).toContain("planner-v__parts-tile--active");
   });
 });
 

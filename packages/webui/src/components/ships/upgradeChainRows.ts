@@ -235,6 +235,38 @@ export function componentRoleRank(role: string): number {
   return index < 0 ? COMPONENT_ROLE_ORDER.length : index;
 }
 
+/** True when a normalized role is one of the hover card's canonical
+ *  component roles. Split from componentRoleRank so componentDisplayOf can
+ *  reject role words the game invents ("depthchargeguns", "subtorpedoes")
+ *  without ordering them last. */
+export function isChainComponentRole(role: string): boolean {
+  return COMPONENT_ROLE_ORDER.includes(role);
+}
+
+/** Component-role words the game spells differently from the role table
+ *  (the pinger module's component is "A_PingerGun"). Applied after
+ *  chainRole, before the known-role gate. */
+const COMPONENT_ROLE_ALIASES: Readonly<Record<string, string>> = {
+  pingergun: "pinger",
+};
+
+/** Parse one mounted component NAME into its panel display parts. The game
+ *  shapes component names as <1-3 variant letters>_<RoleWords> ("B_Hull",
+ *  "A_Artillery", "AB_AirArmament"); the variant letters are the component's
+ *  own series, NOT the panel column letter. Returns null for anything the
+ *  shape does not cover — GameParams entry names ("PRUH717_CA8_HULL_TOP"),
+ *  bare stems ("HullDefault"), digit-carrying variants ("AB1_Torpedoes"),
+ *  TIER-suffixed chains ("A_Hull_TIER2") and unknown role words — and the
+ *  caller falls back to the raw name (the current rendering). */
+export function componentDisplayOf(name: string): { role: string; variant: string } | null {
+  const match = /^([A-Za-z]{1,3})_([A-Za-z]+)$/.exec(String(name ?? ""));
+  if (!match) return null;
+  const normalized = chainRole(match[2]);
+  const role = COMPONENT_ROLE_ALIASES[normalized] ?? normalized;
+  if (!isChainComponentRole(role)) return null;
+  return { role, variant: match[1] };
+}
+
 /** One mounted component role of a module, ready for the hover card. */
 export interface MountedComponent {
   /** Lowercase role key (ships.parts.role.<role>), e.g. "torpedoes". */

@@ -28,6 +28,7 @@
  */
 import type { Profile } from "./shipSpecs";
 import type { TechTreeRealm } from "@/utils/techTreeData";
+import { moduleStatsOf, type ModuleStats } from "@/utils/shipModuleStats";
 import skillsData from "../../data/skills.json";
 import skillsLestaData from "../../data/skills_lesta.json";
 import signalsData from "../../data/signals.json";
@@ -44,6 +45,12 @@ export interface BuildConfig {
   upgrades: Record<number, string>;
   /** Selected unique commander (commanders.json name) — display only. */
   commander: string | null;
+  /** 装备选择 equipment-chain selection: normalized slot role → the
+   *  selected module's chain entry name (e.g. hull → PRUH717_CA8_HULL_TOP).
+   *  Optional so existing object literals (the tactics lineup builder)
+   *  keep compiling; an absent/empty map means "every slot mounts its
+   *  fully-researched top module", the panel's visual default. */
+  modules?: Record<string, string>;
 }
 
 /** Full planner state: a build + the current-HP slider (drives trigger skills). */
@@ -52,9 +59,11 @@ export interface PlannerBuild extends BuildConfig {
   healthPct: number;
 }
 
-/** Empty build — also the reset target for the planner. */
+/** Empty build — also the reset target for the planner. modules starts as
+ *  an explicit empty map (not undefined) so reset always produces the same
+ *  shape a selection click will leave behind. */
 export function emptyBuild(): PlannerBuild {
-  return { skills: {}, signals: [], upgrades: {}, commander: null, healthPct: 1 };
+  return { skills: {}, signals: [], upgrades: {}, commander: null, modules: {}, healthPct: 1 };
 }
 
 export interface ModifiedStats {
@@ -217,6 +226,9 @@ function resolveCoef(value: unknown, shipType: string): number | null {
  *                  "wg" (default) reads skills.json / signals.json, "lesta"
  *                  reads skills_lesta.json / signals_lesta.json. Callers
  *                  without a realm (the lineup editor) keep WG behavior.
+ * @param resolveModuleStats  Chain-module stats accessor, injected so unit
+ *                  tests stay synthetic (the suites never pin real bundle
+ *                  numbers); defaults to the real moduleStatsOf pack.
  */
 export function recomputeStats(
   profile: Profile,
@@ -226,8 +238,36 @@ export function recomputeStats(
   healthPct: number,
   caliberMm?: number | null,
   realm: TechTreeRealm = "wg",
+  resolveModuleStats: (realm: TechTreeRealm, name: string) => ModuleStats | null = moduleStatsOf,
 ): { base: ModifiedStats; modified: ModifiedStats } {
   const base = readBase(profile);
+  // ── Source 0: the mounted equipment-chain modules ──────────────────────
+  // WG's default_profile describes the FULLY-UPGRADED config — the same
+  // config the 装备选择 panel mounts by default (its per-slot default is
+  // the fully-researched top module) — while the player may mount any
+  // module of the slot. Mounting therefore REBASES the profile numbers
+  // before any multiplier accumulates, so both the panel's base column and
+  // the multiplier pass below read the mounted module's own stats.
+  // Overrides apply only to fields the pack KNOWS (non-null) — never
+  // fabricate; roles the extractor does not carry (fire control, engine,
+  // ...) resolve to no stats and stay on the profile numbers, and a build
+  // without module selections behaves exactly as before.
+  const modules = build?.modules;
+  if (modules?.hull) {
+    const stats = resolveModuleStats(realm, modules.hull);
+    if (stats?.health != null) base.hp = stats.health;
+  }
+  if (modules?.artillery) {
+    const stats = resolveModuleStats(realm, modules.artillery);
+    // The pipeline's range unit is km, the pack stores meters — the same
+    // conversion the module tooltip card already applies.
+    if (stats?.rangeM != null) base.range = stats.rangeM / 1000;
+    if (stats?.reloadS != null) base.reload = stats.reloadS;
+  }
+  if (modules?.torpedoes) {
+    const stats = resolveModuleStats(realm, modules.torpedoes);
+    if (stats?.reloadS != null) base.torpedoReload = stats.reloadS;
+  }
   const modified: ModifiedStats = { ...base };
   const hpFrac = Math.max(0, Math.min(1, healthPct));
   const caliber =
