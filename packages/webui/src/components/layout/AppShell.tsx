@@ -501,6 +501,13 @@ export default defineComponent({
             side="left"
             title={t("nav.menu")}
             size="min(18.75rem, 84vw)"
+            // NO BODY PADDING: the slot is the NAV PANEL, not prose. The
+            // drawer's 1rem default inset the panel (`.sidebar--drawer`
+            // already declares `width: 100%`), and because the panel's
+            // overlay scroll rail rides the PANEL's edge, the rail floated
+            // ~20px inside the drawer instead of hugging it (2026-11-27
+            // field report; same shape hikari #1590 fixes for the shells).
+            padding="none"
           >
             <Sidebar variant="drawer" />
           </HkDrawer>
