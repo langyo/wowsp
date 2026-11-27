@@ -1,12 +1,12 @@
 /**
  * The Tab overlay's plate-opacity dial: the pure percent → CSS clamp, the
  * <html> apply, and the stylesheet contract that keeps the dial wired to
- * BOTH glass plates with today's look as the inline fallback.
+ * BOTH glass plates with the shipped default as the inline fallback.
  *
  * overlay.scss is read as TEXT (not compiled): renderSample.test.ts inlines
  * the same file into a JS-less page, so the fallback inside each plate rule
- * is the only thing keeping that sample at the shipped 62%. Deleting a
- * plate's fallback must fail here, in the spirit of
+ * is the only thing keeping that sample at the shipped default (80%).
+ * Deleting a plate's fallback must fail here, in the spirit of
  * theme/surfaces.styles.test.ts.
  */
 import { readFileSync } from "node:fs";
@@ -28,7 +28,8 @@ afterEach(() => {
 describe("overlayBackdropCss", () => {
   it("clamps into the dial's band and spells a percentage", () => {
     // Both band edges are real values — 100 is FULLY opaque, not a
-    // multiplier of the stylesheet's shipped 62%.
+    // fraction of some shipped alpha. 62 stays a legal in-band value (the
+    // original chip glass); it just is not the default anymore.
     expect(overlayBackdropCss(50)).toBe("50%");
     expect(overlayBackdropCss(62)).toBe("62%");
     expect(overlayBackdropCss(100)).toBe("100%");
@@ -39,7 +40,7 @@ describe("overlayBackdropCss", () => {
 
   it("answers the default for junk input", () => {
     for (const junk of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
-      expect(overlayBackdropCss(junk)).toBe("62%");
+      expect(overlayBackdropCss(junk)).toBe("80%");
     }
   });
 });
@@ -58,7 +59,7 @@ describe("applyOverlayBackdropPercent", () => {
 
   it("writes the default instead of an invalid declaration", () => {
     applyOverlayBackdropPercent(Number.NaN);
-    expect(applied()).toBe("62%");
+    expect(applied()).toBe("80%");
   });
 });
 
@@ -78,7 +79,7 @@ describe("overlay.scss plate wiring", () => {
     return match?.[1] ?? null;
   }
 
-  it("drives BOTH glass plates through the dial with today's look inline", () => {
+  it("drives BOTH glass plates through the dial with the shipped default inline", () => {
     const fill =
       "background: rgb(10 14 20 / var(" +
       OVERLAY_BACKDROP_CSS_VAR +
@@ -94,6 +95,6 @@ describe("overlay.scss plate wiring", () => {
 
   it("pins the public names the stylesheet contract depends on", () => {
     expect(OVERLAY_BACKDROP_CSS_VAR).toBe("--overlay-backdrop-opacity");
-    expect(DEFAULT_BACKDROP_OPACITY_PCT).toBe(62);
+    expect(DEFAULT_BACKDROP_OPACITY_PCT).toBe(80);
   });
 });

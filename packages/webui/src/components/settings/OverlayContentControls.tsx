@@ -61,13 +61,14 @@ export default defineComponent({
             the battle. ONE knob for every plate in that window (each chip
             and the centered status card, overlay.scss), 100% fully opaque,
             and the band's floor keeps the digits legible over a battle
-            frame. The stored default reproduces the shipped chip alpha, so
-            an untouched install's chips look exactly as before (the status
-            card settles onto the same value — one setting cannot carry two
-            plate alphas). Live: the overlay window re-reads the prefs blob
-            on the store's broadcast, so a drag repaints the in-game plates
-            immediately (overlay/backdrop.ts writes the CSS var,
-            overlay/main.ts's refreshPrefs re-applies it). */}
+            frame. The stored default (80) ships a step more solid than the
+            original 62 chip glass, so an untouched install reads better
+            over bright water (the status card settles onto the same value —
+            one setting cannot carry two plate alphas). Live: the overlay
+            window re-reads the prefs blob on the store's broadcast, so a
+            drag repaints the in-game plates immediately (overlay/backdrop.ts
+            writes the CSS var, overlay/main.ts's refreshPrefs re-applies
+            it). */}
         <div class="stats-prefs__row">
           <span class="stats-prefs__row-text">
             <span class="stats-prefs__row-label">

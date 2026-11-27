@@ -492,7 +492,7 @@
     "title": "Contenu affiché",
     "hint": "Choisissez les chiffres affichés par la fiche stats — sur l'overlay Tab et les panneaux de bataille ; les changements s'appliquent immédiatement partout.",
     "backdropOpacity": "Opacité du fond",
-    "backdropOpacityDesc": "Opacité des plaques sombres derrière les chiffres de l'overlay Tab : de 50 % à 100 %, où 100 % est totalement opaque. La valeur par défaut conserve le fond actuel des pastilles de joueur ; les modifications s'appliquent immédiatement.",
+    "backdropOpacityDesc": "Opacité des plaques sombres derrière les chiffres de l'overlay Tab : de 50 % à 100 %, où 100 % est totalement opaque. La valeur par défaut est 80 %, un cran plus dense que le verre d'origine ; les modifications s'appliquent immédiatement.",
     "battleScope": "Type de bataille",
     "battleScopeDesc": "Source des chiffres : suivre la bataille (classée en bataille classée, aléatoires sinon), ou figer aléatoires / classées / global (aléatoires + classées fusionnées).",
     "battleFollow": "Suivre la bataille",

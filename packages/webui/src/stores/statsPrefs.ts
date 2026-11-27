@@ -168,10 +168,11 @@ export interface StatsPrefs {
   overlayBattleScope: RosterBattleScope;
   /** How opaque the Tab overlay's dark content plates are, as a whole
    *  percent: every per-player chip plus the centered status card, ONE dial
-   *  for the whole overlay (overlay.scss). 100 = fully opaque; 62 =
-   *  today's `.overlay-chip` alpha, the default; the status card settles
-   *  onto the same value (one dial cannot carry two plate alphas). It
-   *  rides this blob rather than the overlay window's own config because
+   *  for the whole overlay (overlay.scss). 100 = fully opaque; the shipped
+   *  default is 80, a step more solid than the original 62 chip glass so an
+   *  untouched install reads better over bright water; the status card
+   *  settles onto the same value (one dial cannot carry two plate alphas).
+   *  It rides this blob rather than the overlay window's own config because
    *  the overlay re-reads this blob on the main window's
    *  `wowsp://stats-prefs-changed` broadcast — the only live channel into
    *  that window (see overlay/backdrop.ts). The stylesheet takes it as the
@@ -183,12 +184,13 @@ export const STATS_PREFS_STORAGE_KEY = "wowsp-stats-prefs";
 
 /** The Tab overlay's plate-opacity dial (see `overlayBackdropPct`): whole
  *  percents, 50 the lightest the copy stays legible over a battle frame and
- *  100 fully opaque; 62 is today's chip alpha as the shipped default. The
- *  band lives beside the persisted field so the settings slider, both blob
- *  readers and the CSS writer share one definition. */
+ *  100 fully opaque; 80 is the shipped default — a step more solid than the
+ *  original 62 chip glass. The band lives beside the persisted field so the
+ *  settings slider, both blob readers and the CSS writer share one
+ *  definition. */
 export const OVERLAY_BACKDROP_PCT_MIN = 50;
 export const OVERLAY_BACKDROP_PCT_MAX = 100;
-export const DEFAULT_OVERLAY_BACKDROP_PCT = 62;
+export const DEFAULT_OVERLAY_BACKDROP_PCT = 80;
 
 /** The canonical seal kinds — mirrored here (type-only import above) so
  *  parsePrefs can drop junk keys from a hand-edited blob. The veteran

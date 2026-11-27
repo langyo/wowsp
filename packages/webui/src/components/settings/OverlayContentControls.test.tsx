@@ -89,7 +89,7 @@ interface StoreStub {
 
 /** Reactive store stub: prefs is a real reactive object, so a test can nudge
  *  it the way the overlay window's broadcast does. */
-function seedStore(pct = 62): StoreStub {
+function seedStore(pct = 80): StoreStub {
   const prefs = reactive({
     overlayBackdropPct: pct,
     overlayBattleScope: "follow",
