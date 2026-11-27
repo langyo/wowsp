@@ -72,6 +72,10 @@ import {
   teamIntelFor,
   type TeamIntelCount,
 } from "./teamIntel";
+// The plate-opacity dial's CSS end: writes the user-set percentage onto
+// <html>, where the chips and the status card resolve it (applied at boot
+// and after every prefs broadcast — see below).
+import { applyOverlayBackdropPercent } from "./backdrop";
 // Display prefs (the configured stat columns + the battle-type scope),
 // read with the same tolerant contract as the store and re-read live when
 // the main window broadcasts a prefs write (see refreshPrefs below).
@@ -461,6 +465,10 @@ const tieByRosterOrder = () => realm === "ru";
 // webui surfaces: no PR rating, no seals, and a seal switched off
 // individually never renders either.
 let PREFS = readOverlayDisplayPrefs();
+// Paint the saved plate opacity before the first chip renders: the plates
+// read the property off documentElement (backdrop.ts), and a window created
+// after the setting was written gets no broadcast to wait for.
+applyOverlayBackdropPercent(PREFS.backdropOpacityPct);
 // The seal wording is Chinese-community vocabulary — RatingStamp.tsx
 // renders nothing under a non-zh UI locale, and the overlay chips follow
 // suit.
@@ -501,17 +509,21 @@ let statsAlgo: PrAlgo = PREFS.prAlgo ?? "winrate";
  *  window instead of only the next one. The career batch needs no re-query
  *  for the stats-source dims (one answer carries all three battle modes)
  *  and neither do the display toggles — a re-render through the refreshed
- *  snapshot is the whole update. The PR-algo param is the one pref the
- *  cached numbers BAKED IN at fetch time: an effective flip invalidates
- *  the cached careers and per-ship lists so the chips re-query under the
- *  new algo, matching the main window's roster pipeline. The wholesale
- *  clear also drops the cached clan tags, so the believed Tab order
- *  degrades to tag-less for the re-query's span — the same face a battle
- *  start has, and re-heals the moment the batch lands; cheaper to accept
- *  than showing old-algo numbers. */
+ *  snapshot is the whole update. The plate opacity needs no render either:
+ *  it is a CSS property apply on <html> (backdrop.ts). The PR-algo param is
+ *  the one pref the cached numbers BAKED IN at fetch time: an effective
+ *  flip invalidates the cached careers and per-ship lists so the chips
+ *  re-query under the new algo, matching the main window's roster pipeline.
+ *  The wholesale clear also drops the cached clan tags, so the believed Tab
+ *  order degrades to tag-less for the re-query's span — the same face a
+ *  battle start has, and re-heals the moment the batch lands; cheaper to
+ *  accept than showing old-algo numbers. */
 function refreshPrefs(): void {
   const prevAlgo = statsAlgo;
   PREFS = readOverlayDisplayPrefs();
+  // The glass re-styles from the same snapshot: a custom property repaint
+  // needs no render pass (see the doc above).
+  applyOverlayBackdropPercent(PREFS.backdropOpacityPct);
   SEALS_SHOWN = PREFS.sealsOn && locale.startsWith("zh");
   ANY_CHIP_ON = effectiveOverlayColumns(PREFS.columns, PREFS.prOn).length > 0;
   SHIP_SCOPE_ON = columnsNeedShipStats(PREFS.columns, PREFS.prOn);

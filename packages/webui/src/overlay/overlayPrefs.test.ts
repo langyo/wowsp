@@ -56,6 +56,7 @@ describe("readOverlayDisplayPrefs", () => {
       sealsOn: true, // PR master + seals both default on now
       sealsDisabled: new Set(),
       sealLabels: {},
+      backdropOpacityPct: 62,
       prAlgo: "winrate",
       prOn: true,
     });
@@ -105,6 +106,27 @@ describe("readOverlayDisplayPrefs", () => {
     // No labels key → the empty map (every face keeps its default wording).
     localStorage.setItem("wowsp-stats-prefs", JSON.stringify({ prEnabled: true }));
     expect(readOverlayDisplayPrefs().sealLabels).toEqual({});
+  });
+
+  it("reads the plate-opacity dial with the store's clamp", () => {
+    // The main window's store owns the write; the overlay must land on the
+    // same value its settings slider shows.
+    localStorage.setItem(
+      "wowsp-stats-prefs",
+      JSON.stringify({ overlayBackdropPct: 87 }),
+    );
+    expect(readOverlayDisplayPrefs().backdropOpacityPct).toBe(87);
+    // Out-of-band and junk values clamp/default instead of painting an
+    // invalid or out-of-band fill.
+    localStorage.setItem("wowsp-stats-prefs", JSON.stringify({ overlayBackdropPct: 5 }));
+    expect(readOverlayDisplayPrefs().backdropOpacityPct).toBe(50);
+    localStorage.setItem("wowsp-stats-prefs", JSON.stringify({ overlayBackdropPct: 500 }));
+    expect(readOverlayDisplayPrefs().backdropOpacityPct).toBe(100);
+    localStorage.setItem(
+      "wowsp-stats-prefs",
+      JSON.stringify({ overlayBackdropPct: "wide" }),
+    );
+    expect(readOverlayDisplayPrefs().backdropOpacityPct).toBe(62);
   });
 
   it("migrates the retired team-average toggles in parity with the store", () => {

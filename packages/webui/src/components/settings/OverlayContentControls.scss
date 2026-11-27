@@ -1,0 +1,45 @@
+// The water-table content card's backdrop-opacity dial (label + slider +
+// live percentage readout). Only the CONTROL PAIR is local: the shared
+// stats-prefs__row already owns the label/description column, the row
+// rhythm and the narrow-pane wrap. hikari's HkSlider draws its rail, fill
+// and thumb with absolutely positioned children, so it has NO intrinsic
+// width and a bare slider collapses to zero inside a flex row — the band
+// below is what keeps it grabbable. The readout is a fixed tabular-figure
+// column so the track does not shift while the thumb drags from 2 to 3
+// digits (the settings slider rows' __dpi-value idiom).
+
+.overlay-content__backdrop-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8, 8px);
+  flex: none;
+}
+
+.overlay-content__backdrop-slider {
+  width: 10.5rem;
+  flex: none;
+}
+
+.overlay-content__backdrop-value {
+  min-width: 2.75rem;
+  text-align: right;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--color-text));
+}
+
+// Narrow panes: the shared row's own ≤767px wrap has already dropped the
+// control pair onto its own line — the slider then stretches into the
+// available width while the readout keeps its fixed column. Same pattern
+// as the aim-card hang row (sections/OverlaySection.scss).
+@media (max-width: 767px) {
+  .overlay-content__backdrop-controls {
+    width: 100%;
+  }
+
+  .overlay-content__backdrop-slider {
+    flex: 1 1 auto;
+    width: auto;
+  }
+}

@@ -21,6 +21,7 @@ import {
   legacyChipsOf,
   legacyColumnsSeed,
   legacyTeamAvgEnabledOf,
+  parseOverlayBackdropPct,
   parseOverlayColumns,
   type OverlayColumn,
   type OverlayColumnMetric,
@@ -117,6 +118,11 @@ export interface OverlayDisplayPrefs {
   /** The PR master switch — the PR columns/averages double-gate on it,
    *  the same rule the roster panels' PR columns follow. */
   prOn: boolean;
+  /** The dark glass plates' opacity as a whole percent (the statsPrefs
+   *  `overlayBackdropPct`: 50–100, 100 fully opaque). overlay/main.ts hands
+   *  this to backdrop.ts's CSS-property apply at boot and on every prefs
+   *  broadcast — no render path reads it. */
+  backdropOpacityPct: number;
 }
 
 /** Known seal kinds — junk keys in the kill-switch map are dropped. The
@@ -226,6 +232,9 @@ export function readOverlayDisplayPrefs(): OverlayDisplayPrefs {
       }),
     ),
     sealLabels: readSealLabels(j),
+    // The plate-opacity dial, parsed with the store's own clamp so this
+    // window paints exactly the value the main window's slider holds.
+    backdropOpacityPct: parseOverlayBackdropPct(j?.overlayBackdropPct),
     prAlgo,
     prOn: prEnabled,
   };

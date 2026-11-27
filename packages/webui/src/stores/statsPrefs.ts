@@ -166,9 +166,29 @@ export interface StatsPrefs {
   /** Stats-source battle-type scope — the panel-wide dimension every
    *  column reads (see `RosterBattleScope`). */
   overlayBattleScope: RosterBattleScope;
+  /** How opaque the Tab overlay's dark content plates are, as a whole
+   *  percent: every per-player chip plus the centered status card, ONE dial
+   *  for the whole overlay (overlay.scss). 100 = fully opaque; 62 =
+   *  today's `.overlay-chip` alpha, the default; the status card settles
+   *  onto the same value (one dial cannot carry two plate alphas). It
+   *  rides this blob rather than the overlay window's own config because
+   *  the overlay re-reads this blob on the main window's
+   *  `wowsp://stats-prefs-changed` broadcast — the only live channel into
+   *  that window (see overlay/backdrop.ts). The stylesheet takes it as the
+   *  plate fill's FINAL alpha, not a multiplier. */
+  overlayBackdropPct: number;
 }
 
 export const STATS_PREFS_STORAGE_KEY = "wowsp-stats-prefs";
+
+/** The Tab overlay's plate-opacity dial (see `overlayBackdropPct`): whole
+ *  percents, 50 the lightest the copy stays legible over a battle frame and
+ *  100 fully opaque; 62 is today's chip alpha as the shipped default. The
+ *  band lives beside the persisted field so the settings slider, both blob
+ *  readers and the CSS writer share one definition. */
+export const OVERLAY_BACKDROP_PCT_MIN = 50;
+export const OVERLAY_BACKDROP_PCT_MAX = 100;
+export const DEFAULT_OVERLAY_BACKDROP_PCT = 62;
 
 /** The canonical seal kinds — mirrored here (type-only import above) so
  *  parsePrefs can drop junk keys from a hand-edited blob. The veteran
@@ -215,6 +235,7 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
     { scope: "global", metric: "damage" },
   ],
   overlayBattleScope: "follow",
+  overlayBackdropPct: DEFAULT_OVERLAY_BACKDROP_PCT,
 };
 
 function isPrAlgo(v: unknown): v is PrAlgo {
@@ -267,6 +288,21 @@ export function parseOverlayColumns(raw: unknown): OverlayColumn[] {
     if (out.length >= OVERLAY_COLUMN_LIMIT) break;
   }
   return out;
+}
+
+/** Clamp a stored or requested backdrop percentage into the dial's band.
+ *  Absent or non-finite input answers the default (a hand-edited blob can
+ *  carry anything); a finite value rounds to the slider's whole step and
+ *  clamps instead of resetting — an out-of-band write keeps the user's
+ *  nearest intent, and 100 stays exactly 100 (fully opaque). */
+export function parseOverlayBackdropPct(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    return DEFAULT_OVERLAY_BACKDROP_PCT;
+  }
+  return Math.min(
+    OVERLAY_BACKDROP_PCT_MAX,
+    Math.max(OVERLAY_BACKDROP_PCT_MIN, Math.round(raw)),
+  );
 }
 
 /** Column-scope seed off the retired ship/solo dimensions: a blob last
@@ -453,6 +489,7 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
           ? j.overlayBattleScope
           : legacyBattleScopeOf(j.overlayStatsMode) ??
             DEFAULT_STATS_PREFS.overlayBattleScope,
+      overlayBackdropPct: parseOverlayBackdropPct(j.overlayBackdropPct),
     };
   } catch {
     return null;
@@ -642,6 +679,17 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     save();
   }
 
+  /** The backdrop dial's write path (settings slider): clamp into the band
+   *  and no-op on an unchanged value — the slider fires per step, and each
+   *  re-persist would broadcast a full overlay prefs re-read + re-render for
+   *  a value the window already paints. */
+  function setOverlayBackdropPct(v: number) {
+    const next = parseOverlayBackdropPct(v);
+    if (next === prefs.value.overlayBackdropPct) return;
+    prefs.value.overlayBackdropPct = next;
+    save();
+  }
+
   return {
     prefs,
     setPrEnabled,
@@ -660,5 +708,6 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setSealLabel,
     setOverlayColumns,
     setOverlayBattleScope,
+    setOverlayBackdropPct,
   };
 });
