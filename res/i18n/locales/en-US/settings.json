@@ -491,6 +491,8 @@
   "overlayContent": {
     "title": "Display content",
     "hint": "Choose which numbers the water table shows — on the Tab overlay and the live / post-battle roster panels alike; changes apply immediately everywhere.",
+    "backdropOpacity": "Backdrop opacity",
+    "backdropOpacityDesc": "How opaque the dark plates behind the Tab overlay's numbers are: 50%–100%, where 100% is fully opaque. The default keeps today's chip backdrop, and changes apply immediately.",
     "battleScope": "Battle type",
     "battleScopeDesc": "Which battle-mode career the numbers come from: follow the current battle (ranked battles show ranked stats, everything else randoms), or pin randoms / ranked / global (randoms + ranked merged).",
     "battleFollow": "Follow battle",

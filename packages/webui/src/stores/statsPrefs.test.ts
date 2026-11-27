@@ -12,6 +12,7 @@ import {
   STATS_PREFS_STORAGE_KEY,
   loadStatsPrefs,
   overlayColumnsAreDefault,
+  parseOverlayBackdropPct,
   useStatsPrefsStore,
 } from "./statsPrefs";
 
@@ -77,6 +78,7 @@ describe("loadStatsPrefs", () => {
         { scope: "global", metric: "damage" },
       ],
       overlayBattleScope: "follow",
+      overlayBackdropPct: 62,
     });
   });
 
@@ -393,6 +395,28 @@ describe("loadStatsPrefs", () => {
   });
 });
 
+describe("parseOverlayBackdropPct", () => {
+  it("clamps into the overlay dial's band and rounds to whole percents", () => {
+    // Both band edges are real settings — 100 is FULLY opaque.
+    expect(parseOverlayBackdropPct(50)).toBe(50);
+    expect(parseOverlayBackdropPct(62)).toBe(62);
+    expect(parseOverlayBackdropPct(100)).toBe(100);
+    // Out-of-band values keep the nearest intent instead of resetting.
+    expect(parseOverlayBackdropPct(49)).toBe(50);
+    expect(parseOverlayBackdropPct(101)).toBe(100);
+    expect(parseOverlayBackdropPct(73.4)).toBe(73);
+  });
+
+  it("answers the default for absent or non-numeric input", () => {
+    expect(parseOverlayBackdropPct(undefined)).toBe(62);
+    expect(parseOverlayBackdropPct(null)).toBe(62);
+    expect(parseOverlayBackdropPct(Number.NaN)).toBe(62);
+    expect(parseOverlayBackdropPct(Number.POSITIVE_INFINITY)).toBe(62);
+    // A hand-edited blob can carry a string — no number, no dial value.
+    expect(parseOverlayBackdropPct("73")).toBe(62);
+  });
+});
+
 describe("overlayColumnsAreDefault", () => {
   it("matches only the shipped four global columns", () => {
     expect(overlayColumnsAreDefault(DEFAULT_STATS_PREFS.overlayColumns)).toBe(true);
@@ -434,6 +458,7 @@ describe("statsPrefs store", () => {
       { scope: "class", metric: "damage" },
     ]);
     store.setOverlayBattleScope("ranked");
+    store.setOverlayBackdropPct(88);
 
     const raw = localStorage.getItem(STATS_PREFS_STORAGE_KEY);
     expect(raw).toBeTruthy();
@@ -458,10 +483,30 @@ describe("statsPrefs store", () => {
         { scope: "class", metric: "damage" },
       ],
       overlayBattleScope: "ranked",
+      overlayBackdropPct: 88,
     };
     expect(JSON.parse(raw!)).toEqual(expected);
     // Same values read back through the pure loader (the round trip).
     expect(loadStatsPrefs()).toEqual(expected);
+  });
+
+  it("persists the backdrop dial, clamping and skipping unchanged writes", async () => {
+    const { useStatsPrefsStore: useFresh } = await freshModule();
+    const store = useFresh();
+    const setItem = vi.spyOn(localStorage, "setItem");
+    // An out-of-band write clamps instead of resetting.
+    store.setOverlayBackdropPct(140);
+    expect(store.prefs.overlayBackdropPct).toBe(100);
+    expect(setItem).toHaveBeenCalledTimes(1);
+    // The same clamped value AGAIN no-ops: no re-persist, so the Tab overlay
+    // gets no redundant prefs broadcast + re-render for a value it paints.
+    store.setOverlayBackdropPct(120);
+    expect(setItem).toHaveBeenCalledTimes(1);
+    setItem.mockRestore();
+    // The write landed on disk and reads back through the pure loader.
+    expect(loadStatsPrefs().overlayBackdropPct).toBe(100);
+    store.setOverlayBackdropPct(50);
+    expect(loadStatsPrefs().overlayBackdropPct).toBe(50);
   });
 
   it("silently rejects a duplicate or over-limit column write", async () => {
