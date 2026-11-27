@@ -78,7 +78,7 @@ describe("loadStatsPrefs", () => {
         { scope: "global", metric: "damage" },
       ],
       overlayBattleScope: "follow",
-      overlayBackdropPct: 62,
+      overlayBackdropPct: 80,
     });
   });
 
@@ -408,12 +408,12 @@ describe("parseOverlayBackdropPct", () => {
   });
 
   it("answers the default for absent or non-numeric input", () => {
-    expect(parseOverlayBackdropPct(undefined)).toBe(62);
-    expect(parseOverlayBackdropPct(null)).toBe(62);
-    expect(parseOverlayBackdropPct(Number.NaN)).toBe(62);
-    expect(parseOverlayBackdropPct(Number.POSITIVE_INFINITY)).toBe(62);
+    expect(parseOverlayBackdropPct(undefined)).toBe(80);
+    expect(parseOverlayBackdropPct(null)).toBe(80);
+    expect(parseOverlayBackdropPct(Number.NaN)).toBe(80);
+    expect(parseOverlayBackdropPct(Number.POSITIVE_INFINITY)).toBe(80);
     // A hand-edited blob can carry a string — no number, no dial value.
-    expect(parseOverlayBackdropPct("73")).toBe(62);
+    expect(parseOverlayBackdropPct("73")).toBe(80);
   });
 });
 

@@ -492,7 +492,7 @@
     "title": "Contenido mostrado",
     "hint": "Elige qué números muestra la tabla de estadísticas — en el overlay de Tab y en los paneles de batalla; los cambios se aplican al instante en todas partes.",
     "backdropOpacity": "Opacidad del fondo",
-    "backdropOpacityDesc": "Opacidad de las placas oscuras tras los números del overlay de Tab: del 50 % al 100 %, donde el 100 % es totalmente opaco. El valor por defecto mantiene el fondo actual de las fichas de jugador; los cambios se aplican al instante.",
+    "backdropOpacityDesc": "Opacidad de las placas oscuras tras los números del overlay de Tab: del 50 % al 100 %, donde el 100 % es totalmente opaco. Por defecto, 80 %, un paso más sólido que el cristal original; los cambios se aplican al instante.",
     "battleScope": "Tipo de batalla",
     "battleScopeDesc": "Origen de las cifras: seguir la batalla actual (clasificadas en batallas clasificadas, aleatorias en el resto), o fijar aleatorias / clasificadas / global (aleatorias + clasificadas combinadas).",
     "battleFollow": "Seguir batalla",

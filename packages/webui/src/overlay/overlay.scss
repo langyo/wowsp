@@ -53,11 +53,11 @@ html.overlay-hidden body {
   /* The plate's alpha is user-configurable (settings ▸ 游戏内水表): the
      dial's percentage is written onto <html> at boot and on every prefs
      broadcast (overlay/backdrop.ts), and this fill takes it as its FINAL
-     opacity — not a multiplier — so 100% is fully opaque. The inline 62%
-     fallback is today's exact chip alpha: it keeps the JS-less sample page
-     (renderSample.test.ts inlines this file) at the shipped look while the
-     property is unset. */
-  background: rgb(10 14 20 / var(--overlay-backdrop-opacity, 62%));
+     opacity — not a multiplier — so 100% is fully opaque. The inline 80%
+     fallback is the dial's shipped default: it keeps the JS-less sample
+     page (renderSample.test.ts inlines this file) at the shipped look
+     while the property is unset. */
+  background: rgb(10 14 20 / var(--overlay-backdrop-opacity, 80%));
   border: 1px solid rgb(255 255 255 / 10%);
   color: rgb(236 241 246);
   line-height: 1.25;
@@ -259,10 +259,10 @@ html.overlay-hidden body {
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 12px;
   /* The SAME dial as the chips — one knob for all overlay content. At the
-     shared 62% default this card sits slightly lighter than its old fixed
+     shared 80% default this card sits slightly heavier than its old fixed
      72% (accepted: one setting cannot mean two plate alphas), and the
      inline fallback keeps the JS-less sample page rendering it. */
-  background: rgb(10 14 20 / var(--overlay-backdrop-opacity, 62%));
+  background: rgb(10 14 20 / var(--overlay-backdrop-opacity, 80%));
   user-select: none;
   pointer-events: none;
 }

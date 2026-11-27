@@ -56,7 +56,7 @@ describe("readOverlayDisplayPrefs", () => {
       sealsOn: true, // PR master + seals both default on now
       sealsDisabled: new Set(),
       sealLabels: {},
-      backdropOpacityPct: 62,
+      backdropOpacityPct: 80,
       prAlgo: "winrate",
       prOn: true,
     });
@@ -126,7 +126,7 @@ describe("readOverlayDisplayPrefs", () => {
       "wowsp-stats-prefs",
       JSON.stringify({ overlayBackdropPct: "wide" }),
     );
-    expect(readOverlayDisplayPrefs().backdropOpacityPct).toBe(62);
+    expect(readOverlayDisplayPrefs().backdropOpacityPct).toBe(80);
   });
 
   it("migrates the retired team-average toggles in parity with the store", () => {

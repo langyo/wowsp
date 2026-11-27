@@ -4,7 +4,7 @@
  * status card), ONE knob for the whole overlay.
  *
  * The value itself is persisted in the statsPrefs blob (`overlayBackdropPct`,
- * 50–100, 62 = today's chip alpha) because the overlay window shares that
+ * 50–100, 80 = the shipped default) because the overlay window shares that
  * localStorage with the main window and re-reads it live on the
  * `wowsp://stats-prefs-changed` broadcast — the only channel into this
  * window (overlay/main.ts's refreshPrefs). This module is the CSS end of
@@ -15,7 +15,8 @@
  *
  * The number is the plate's FINAL alpha, not a multiplier over the
  * stylesheet literal: overlay.scss hands it straight to the fill's alpha
- * slot, so 100% really is fully opaque instead of "100% of the shipped 62%".
+ * slot, so 100% really is fully opaque rather than a fraction of some
+ * shipped alpha.
  */
 import {
   DEFAULT_OVERLAY_BACKDROP_PCT,
@@ -24,11 +25,12 @@ import {
 } from "@/stores/statsPrefs";
 
 /** Inline custom property on <html>; overlay.scss's plate rules fall back
- *  to today's 62% while it is unset (the JS-less sample page). */
+ *  to the dial's default while it is unset (the JS-less sample page). */
 export const OVERLAY_BACKDROP_CSS_VAR = "--overlay-backdrop-opacity";
 
-/** Today's chip alpha — the plates' inline fallback before the boot apply
- *  lands, and the dial's default. */
+/** The dial's shipped default — the plates' inline fallback before the
+ *  boot apply lands, derived from the store constant so the two cannot
+ *  drift. */
 export const DEFAULT_BACKDROP_OPACITY_PCT = DEFAULT_OVERLAY_BACKDROP_PCT;
 
 /** Pure percent → CSS value: clamp into the dial's band and spell it as a
